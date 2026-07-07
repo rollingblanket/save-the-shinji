@@ -58,7 +58,7 @@ static int frameCounter = 0;
 // TODO: Define global variables here, recommended to make them static
 
 Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight/2 };
-
+Rectangle mapRect = {240, 60, 240, 600};
 
 //----------------------------------------------------------------------------------
 // Module Functions Declaration
@@ -142,6 +142,7 @@ void UpdateDrawFrame(void)
     BeginDrawing();
         ClearBackground(RAYWHITE);
         
+        DrawRectangleLinesEx(mapRect, 4, DARKGRAY);
         DrawCircleV(mainPlayerPosition, 10, MAROON);
         // TODO: Draw everything that requires to be drawn at this point, maybe UI?
 
