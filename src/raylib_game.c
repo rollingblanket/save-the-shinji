@@ -79,7 +79,6 @@ int main(void)
     // Initialization
     //--------------------------------------------------------------------------------------
     InitWindow(screenWidth, screenHeight, "raylib gamejam template");
-    Vector2 mainPlayerPosition = (Vector2){ 400.0f, 200.0f };
     
     // TODO: Load resources / Initialize variables at this point
     
@@ -143,7 +142,7 @@ void UpdateDrawFrame(void)
     BeginDrawing();
         ClearBackground(RAYWHITE);
         
-        DrawCircleV(mainPlayerPosition, 50, MAROON);
+        DrawCircleV(mainPlayerPosition, 10, MAROON);
         // TODO: Draw everything that requires to be drawn at this point, maybe UI?
 
     EndDrawing();
