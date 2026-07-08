@@ -10,6 +10,7 @@
 ********************************************************************************************/
 
 #include "raylib.h"
+#include "raymath.h"
 
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>      // Emscripten library
@@ -88,6 +89,9 @@ static bool doorOpen = false;
 
 // Default radius of a button.
 static const float buttonRadius = 12.0f;
+
+// Radius of the player.
+static const float playerRadius = 10.0f;
 
 Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight/2 };
 
@@ -173,6 +177,9 @@ void UpdateDrawFrame(void)
         if (IsKeyDown(KEY_S)) mainPlayerPosition.y += 2;
         if (IsKeyDown(KEY_A)) mainPlayerPosition.x -= 2;
         if (IsKeyDown(KEY_D)) mainPlayerPosition.x += 2;
+
+        mainPlayerPosition.x = Clamp(mainPlayerPosition.x, mapRect.x + playerRadius, mapRect.x + mapRect.width  - playerRadius);
+        mainPlayerPosition.y = Clamp(mainPlayerPosition.y, mapRect.y + playerRadius, mapRect.y + mapRect.height - playerRadius);
         if (IsKeyDown(KEY_R)) {
             if (playerNearButton) {
                 doorOpen = true;
@@ -207,7 +214,7 @@ void UpdateDrawFrame(void)
         if (!doorOpen) {
             DrawRectangleV(doorPosition, doorSize, GRAY);
         }
-        DrawCircleV(mainPlayerPosition, 10, MAROON);
+        DrawCircleV(mainPlayerPosition, playerRadius, MAROON);
         DrawCircleLines(
             (int)mainPlayerPosition.x,
             (int)mainPlayerPosition.y,
