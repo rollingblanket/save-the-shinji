@@ -35,7 +35,7 @@ PROJECT_BUILD_PATH    ?= .
 PROJECT_SOURCE_FILES  ?= raylib_game.c
 
 # raylib library variables
-RAYLIB_PATH           ?= /opt/homebrew
+RAYLIB_PATH           ?= $(shell brew --prefix raylib)
 RAYLIB_INCLUDE_PATH   ?= $(RAYLIB_PATH)/include
 RAYLIB_LIB_PATH       ?= $(RAYLIB_PATH)/lib
 
