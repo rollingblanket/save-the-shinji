@@ -43,6 +43,28 @@ typedef enum {
 
 // TODO: Define your custom data types here
 
+// A door that controls one (or one portion of a) side river.
+typedef struct Door {
+    Rectangle rect;
+    bool open; // A door is closed by defeault
+} Door;
+
+// A button that controls opening of a door tagged by `doorIndex`.
+typedef struct Button {
+    Vector2 position;
+    float radius;
+    int doorIndex;      // Which door this button controls
+} Button;
+
+// Contains every object of a level.
+typedef struct Level {
+    Button *buttons;
+    int buttonCount;
+
+    Door *doors;
+    int doorCount;
+} Level;
+
 //----------------------------------------------------------------------------------
 // Global Variables Definition (local to this module)
 //----------------------------------------------------------------------------------
@@ -53,12 +75,30 @@ static const int screenHeight = 720;
 static RenderTexture2D target = { 0 };  // Render texture to render our game
 static int frameCounter = 0;
 
+// Interaction radius around the player
+static const float interactionRadius = 25.0f;
+
+// Whether a door is open
+static bool doorOpen = false;
+
+
 
 
 // TODO: Define global variables here, recommended to make them static
 
+// Default radius of a button.
+static const float buttonRadius = 12.0f;
+
 Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight/2 };
+
 Rectangle mapRect = {240, 60, 240, 600};
+
+Vector2 buttonPosition = { (float)screenWidth/3, (float)screenHeight/3 };
+Vector2 buttonSize = { 10, 20 };
+
+Vector2 doorPosition = { (float)screenWidth/3, (float)screenHeight/4 };
+Vector2 doorSize = { 100, 20 };
+
 
 //----------------------------------------------------------------------------------
 // Module Functions Declaration
@@ -121,10 +161,23 @@ void UpdateDrawFrame(void)
     // Update
     //----------------------------------------------------------------------------------
     // TODO: Update variables / Implement example logic at this point
-        if (IsKeyDown(KEY_UP)) mainPlayerPosition.y -= 2;
-        if (IsKeyDown(KEY_DOWN)) mainPlayerPosition.y += 2;
-        if (IsKeyDown(KEY_LEFT)) mainPlayerPosition.x -= 2;
-        if (IsKeyDown(KEY_RIGHT)) mainPlayerPosition.x += 2;
+        
+        // Check if player is near a button
+        bool playerNearButton = CheckCollisionPointCircle(
+            buttonPosition,
+            mainPlayerPosition,
+            interactionRadius
+        );
+
+        if (IsKeyDown(KEY_W)) mainPlayerPosition.y -= 2;
+        if (IsKeyDown(KEY_S)) mainPlayerPosition.y += 2;
+        if (IsKeyDown(KEY_A)) mainPlayerPosition.x -= 2;
+        if (IsKeyDown(KEY_D)) mainPlayerPosition.x += 2;
+        if (IsKeyDown(KEY_R)) {
+            if (playerNearButton) {
+                doorOpen = true;
+            }
+        }
 
 
     frameCounter++;
@@ -143,7 +196,24 @@ void UpdateDrawFrame(void)
         ClearBackground(RAYWHITE);
         
         DrawRectangleLinesEx(mapRect, 4, DARKGRAY);
+        // Highlight button if player is near it
+        if (playerNearButton) {
+            DrawCircleV(buttonPosition, 14, YELLOW);
+            DrawCircleV(buttonPosition, 10, BLUE);
+        } else {
+            DrawCircleV(buttonPosition, 12, BLUE);
+        }
+
+        if (!doorOpen) {
+            DrawRectangleV(doorPosition, doorSize, GRAY);
+        }
         DrawCircleV(mainPlayerPosition, 10, MAROON);
+        DrawCircleLines(
+            (int)mainPlayerPosition.x,
+            (int)mainPlayerPosition.y,
+            interactionRadius,
+            LIGHTGRAY
+        );
         // TODO: Draw everything that requires to be drawn at this point, maybe UI?
 
     EndDrawing();
