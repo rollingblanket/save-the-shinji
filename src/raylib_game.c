@@ -79,12 +79,6 @@ static int frameCounter = 0;
 // Interaction radius around the player
 static const float interactionRadius = 25.0f;
 
-// Whether a door is open
-static bool doorOpen = false;
-
-
-
-
 // TODO: Define global variables here, recommended to make them static
 
 // Default radius of a button.
@@ -93,21 +87,62 @@ static const float buttonRadius = 12.0f;
 // Radius of the player.
 static const float playerRadius = 10.0f;
 
-Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight/2 };
+static Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight/2 };
 
-Rectangle mapRect = {240, 60, 240, 600};
+// Three walkable rooms — left and right are narrower and shorter than mid.
+static const Rectangle midRect   = {240,  60, 240, 600};
+static const Rectangle leftRect  = {170, 260,  70, 200};
+static const Rectangle rightRect = {480, 260,  70, 200};
 
-Vector2 buttonPosition = { (float)screenWidth/3, (float)screenHeight/3 };
-Vector2 buttonSize = { 10, 20 };
+// Shared borders between mid and side rooms, and the y-range where the sides overlap mid.
+static const float borderL = 240.0f;
+static const float borderR = 480.0f;
+static const float overlapMinY = 260.0f;
+static const float overlapMaxY = 460.0f;
 
-Vector2 doorPosition = { (float)screenWidth/3, (float)screenHeight/4 };
-Vector2 doorSize = { 100, 20 };
+#define DOOR_COUNT 2
+static Door doors[DOOR_COUNT] = {
+    { { 237.0f, 320.0f, 6.0f, 80.0f }, false },  // left-mid door on borderL
+    { { 477.0f, 320.0f, 6.0f, 80.0f }, false },  // mid-right door on borderR
+};
+
+#define BUTTON_COUNT 2
+static Button buttons[BUTTON_COUNT] = {
+    { { 300.0f, 500.0f }, 12.0f, 0 },  // opens left-mid door
+    { { 420.0f, 500.0f }, 12.0f, 1 },  // opens mid-right door
+};
 
 
 //----------------------------------------------------------------------------------
 // Module Functions Declaration
 //----------------------------------------------------------------------------------
 static void UpdateDrawFrame(void);      // Update and Draw one frame
+
+// Returns true if the player at playerY can cross the vertical border at borderX
+// (an open door covers that y range).
+static bool CanCrossBorder(float borderX, float playerY)
+{
+    if (playerY < overlapMinY || playerY > overlapMaxY) return false;
+
+    for (int i = 0; i < DOOR_COUNT; i++) {
+        float doorCenterX = doors[i].rect.x + doors[i].rect.width * 0.5f;
+        if (fabsf(doorCenterX - borderX) > 1.0f) continue;
+        if (!doors[i].open) continue;
+
+        float dyMin = doors[i].rect.y;
+        float dyMax = doors[i].rect.y + doors[i].rect.height;
+        if (playerY >= dyMin && playerY <= dyMax) return true;
+    }
+    return false;
+}
+
+// Which room the player's center is currently in.
+static Rectangle CurrentRoom(void)
+{
+    if (mainPlayerPosition.x < borderL) return leftRect;
+    if (mainPlayerPosition.x > borderR) return rightRect;
+    return midRect;
+}
 
 //------------------------------------------------------------------------------------
 // Program main entry point
@@ -164,28 +199,53 @@ void UpdateDrawFrame(void)
 {
     // Update
     //----------------------------------------------------------------------------------
-    // TODO: Update variables / Implement example logic at this point
-        
-        // Check if player is near a button
-        bool playerNearButton = CheckCollisionPointCircle(
-            buttonPosition,
-            mainPlayerPosition,
-            interactionRadius
-        );
+    float dx = 0.0f, dy = 0.0f;
+    if (IsKeyDown(KEY_W)) dy -= 2.0f;
+    if (IsKeyDown(KEY_S)) dy += 2.0f;
+    if (IsKeyDown(KEY_A)) dx -= 2.0f;
+    if (IsKeyDown(KEY_D)) dx += 2.0f;
 
-        if (IsKeyDown(KEY_W)) mainPlayerPosition.y -= 2;
-        if (IsKeyDown(KEY_S)) mainPlayerPosition.y += 2;
-        if (IsKeyDown(KEY_A)) mainPlayerPosition.x -= 2;
-        if (IsKeyDown(KEY_D)) mainPlayerPosition.x += 2;
+    // X axis: block border crossings unless an open door lines up with player.y
+    float targetX = mainPlayerPosition.x + dx;
+    if (dx > 0.0f) {
+        float oldRight = mainPlayerPosition.x + playerRadius;
+        float newRight = targetX + playerRadius;
+        if (oldRight <= borderL && newRight > borderL && !CanCrossBorder(borderL, mainPlayerPosition.y)) {
+            targetX = borderL - playerRadius;
+        }
+        if (oldRight <= borderR && newRight > borderR && !CanCrossBorder(borderR, mainPlayerPosition.y)) {
+            targetX = borderR - playerRadius;
+        }
+    } else if (dx < 0.0f) {
+        float oldLeft = mainPlayerPosition.x - playerRadius;
+        float newLeft = targetX - playerRadius;
+        if (oldLeft >= borderR && newLeft < borderR && !CanCrossBorder(borderR, mainPlayerPosition.y)) {
+            targetX = borderR + playerRadius;
+        }
+        if (oldLeft >= borderL && newLeft < borderL && !CanCrossBorder(borderL, mainPlayerPosition.y)) {
+            targetX = borderL + playerRadius;
+        }
+    }
+    mainPlayerPosition.x = targetX;
+    mainPlayerPosition.y += dy;
 
-        mainPlayerPosition.x = Clamp(mainPlayerPosition.x, mapRect.x + playerRadius, mapRect.x + mapRect.width  - playerRadius);
-        mainPlayerPosition.y = Clamp(mainPlayerPosition.y, mapRect.y + playerRadius, mapRect.y + mapRect.height - playerRadius);
-        if (IsKeyDown(KEY_R)) {
-            if (playerNearButton) {
-                doorOpen = true;
+    // Clamp x to the outer walls and y to whichever room the player is in.
+    Rectangle cur = CurrentRoom();
+    mainPlayerPosition.x = Clamp(mainPlayerPosition.x,
+                                 leftRect.x + playerRadius,
+                                 rightRect.x + rightRect.width - playerRadius);
+    mainPlayerPosition.y = Clamp(mainPlayerPosition.y,
+                                 cur.y + playerRadius,
+                                 cur.y + cur.height - playerRadius);
+
+    // Interact with the nearest button under the interaction radius.
+    if (IsKeyDown(KEY_R)) {
+        for (int i = 0; i < BUTTON_COUNT; i++) {
+            if (CheckCollisionPointCircle(buttons[i].position, mainPlayerPosition, interactionRadius)) {
+                doors[buttons[i].doorIndex].open = true;
             }
         }
-
+    }
 
     frameCounter++;
     //----------------------------------------------------------------------------------
@@ -202,17 +262,27 @@ void UpdateDrawFrame(void)
     BeginDrawing();
         ClearBackground(RAYWHITE);
         
-        DrawRectangleLinesEx(mapRect, 4, DARKGRAY);
-        // Highlight button if player is near it
-        if (playerNearButton) {
-            DrawCircleV(buttonPosition, 14, YELLOW);
-            DrawCircleV(buttonPosition, 10, BLUE);
-        } else {
-            DrawCircleV(buttonPosition, 12, BLUE);
+        DrawRectangleLinesEx(midRect,   4, DARKGRAY);
+        DrawRectangleLinesEx(leftRect,  4, DARKGRAY);
+        DrawRectangleLinesEx(rightRect, 4, DARKGRAY);
+
+        for (int i = 0; i < DOOR_COUNT; i++) {
+            if (doors[i].open) {
+                // Punch a hole through the wall outline where the door sits.
+                DrawRectangleRec(doors[i].rect, RAYWHITE);
+            } else {
+                DrawRectangleRec(doors[i].rect, GRAY);
+            }
         }
 
-        if (!doorOpen) {
-            DrawRectangleV(doorPosition, doorSize, GRAY);
+        for (int i = 0; i < BUTTON_COUNT; i++) {
+            bool near = CheckCollisionPointCircle(buttons[i].position, mainPlayerPosition, interactionRadius);
+            if (near) {
+                DrawCircleV(buttons[i].position, buttons[i].radius + 2.0f, YELLOW);
+                DrawCircleV(buttons[i].position, buttons[i].radius - 2.0f, BLUE);
+            } else {
+                DrawCircleV(buttons[i].position, buttons[i].radius, BLUE);
+            }
         }
         DrawCircleV(mainPlayerPosition, playerRadius, MAROON);
         DrawCircleLines(
