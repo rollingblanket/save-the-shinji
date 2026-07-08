@@ -176,6 +176,71 @@ static const Color floorNoise = { 49, 53, 60, 255 };
 static const Color riverBlue = { 47, 111, 208, 255 };
 static const Color riverRed = { 192, 58, 43, 255 };
 
+//----------------------------------------------------------------------------------
+// Witch sprite (3/4 view, ASCII bitmap: each char is one low-res pixel,
+// '.' = transparent, letters are palette keys mapped by SpriteColor())
+//----------------------------------------------------------------------------------
+#define WITCH_SIZE 16
+static const char *witchSprite[WITCH_SIZE] = {
+    "........T.......",
+    ".......TTT......",
+    ".......TTT......",
+    "......TTTTT.....",
+    "......AAAAA.....",
+    "...HHHHHHHHHH...",
+    ".....FFFFFF.....",
+    ".....FEFFEF.....",
+    ".....FFFFFF.....",
+    ".....RRRRRR.....",
+    "....RRRRRRRR....",
+    "...SRRRRRRRRS...",
+    "YYBBBBBBBBBBBB..",
+    "YYY..RRRR.......",
+    ".....K..K.......",
+    "................"
+};
+static bool witchFlipX = false;     // True when facing left, so the bristles trail behind
+
+// Robot head (48x32): sits at the end of the main river, which forms its "body".
+// Wider (252 world px) than the full channel footprint (212 world px)
+#define ROBOT_W 48
+#define ROBOT_H 32
+static const char *robotSprite[ROBOT_H] = {
+    "..............................AAA...............",
+    "..............................AAA...............",
+    "..............................AAA...............",
+    ".............................D..................",
+    "............................D...................",
+    "...........................D....................",
+    "...........................D....................",
+    "...........................D....................",
+    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
+    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
+    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
+    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
+    ".DDDMMMMDLLLLLKKLLLLLLLLLLLLLLLLKKLLLLGDMMMMDDD.",
+    "DMMDMMMMDLLLLLLKKLLLLLLLLLLLLLLKKLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLLKKLLLLLLLLLLLLKKLLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLKKLLLLLLLLLLLLLLKKLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLKKLLLLLLLLLLLLLLLLKKLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
+    ".DDDMMMMDLLLLLLLLLLLKLLLLLLKLLLLLLLLLLGDMMMMDDD.",
+    "...DMMMMDLLLLLLLLLLLKLLKKLLKLLLLLLLLLLGDMMMMD...",
+    "...DMMMMDLLLLLLLLLLLLKKLLKKLLLLLLLLLLLGDMMMMD...",
+    "...DMMMMDGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGDMMMMD...",
+    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
+    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
+    "................................................",
+    "................................................"
+};
+static const Vector2 robotPosition = { 465, 96 };   // Head center, over the river mouth
+
 
 //----------------------------------------------------------------------------------
 // Module Functions Declaration
@@ -186,6 +251,10 @@ static void PropagateRiverColors(void); // Recompute steady-state colors/flow (t
 static void UpdateRiverFlow(float dt);  // Advect color samples downstream
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
+// Draw an ASCII sprite snapped to the low-res pixel grid (shadow = flat dark silhouette)
+static void DrawSprite(const char **rows, int w, int h, Vector2 worldPos, bool flipX, bool shadow);
+static void DrawWitch(Vector2 worldPos, bool shadow);  // Draw the player sprite (or its shadow)
+static void DrawRobot(void);                            // Robot head with idle bob + antenna blink
 
 // Returns true if the player at playerY can cross the vertical border at borderX
 // (an open door covers that y range).
@@ -281,6 +350,23 @@ void UpdateDrawFrame(void)
     if (IsKeyDown(KEY_S)) dy += 2.0f;
     if (IsKeyDown(KEY_A)) dx -= 2.0f;
     if (IsKeyDown(KEY_D)) dx += 2.0f;
+    // Interact with the nearest button under the interaction radius.
+    if (IsKeyDown(KEY_R)) {
+        riversMerged = true;
+        PropagateRiverColors();
+        for (int i = 0; i < BUTTON_COUNT; i++) {
+            if (CheckCollisionPointCircle(buttons[i].position, mainPlayerPosition, interactionRadius)) {
+                doors[buttons[i].doorIndex].open = true;
+            }
+        }
+    }
+
+    if (IsKeyPressed(KEY_SPACE)) BuildRivers();     // Reset demo
+
+
+    // Face the direction of horizontal travel (sprite flips, bristles trail behind)
+    if (dx < 0.0f) witchFlipX = true;
+    else if (dx > 0.0f) witchFlipX = false;
 
     // X axis: block border crossings unless an open door lines up with player.y
     float targetX = mainPlayerPosition.x + dx;
@@ -315,20 +401,6 @@ void UpdateDrawFrame(void)
                                  cur.y + playerRadius,
                                  cur.y + cur.height - playerRadius);
 
-        // Interact with the nearest button under the interaction radius.
-        if (IsKeyDown(KEY_R)) {
-                riversMerged = true;
-                PropagateRiverColors();
-            for (int i = 0; i < BUTTON_COUNT; i++) {
-                if (CheckCollisionPointCircle(buttons[i].position, mainPlayerPosition, interactionRadius)) {
-                    doors[buttons[i].doorIndex].open = true;
-                }
-            }
-        }
-
-
-        if (IsKeyPressed(KEY_SPACE)) BuildRivers();     // Reset demo
-
         UpdateRiverFlow(GetFrameTime());
 
 
@@ -358,11 +430,9 @@ void UpdateDrawFrame(void)
             } else {
                 DrawRectangleRec(doors[i].rect, GRAY);
             }
-    }
-        
-
+        }
         // Pixel-art scene: rebuild the low-res buffer and draw it scaled up
-        // RenderRiverPixels((float)GetTime());
+        RenderRiverPixels((float)GetTime());
         UpdateTexture(riverTexture, riverPixels);
         DrawTexturePro(riverTexture,
             (Rectangle){ 0, 0, RIVER_RES, RIVER_RES },
@@ -371,7 +441,6 @@ void UpdateDrawFrame(void)
 
         if (!riversMerged) DrawText("Press R to merge the rivers", 20, 690, 20, RAYWHITE);
         else DrawText("Merged! Press SPACE to reset", 20, 690, 20, RAYWHITE);
-
 
 
         for (int i = 0; i < BUTTON_COUNT; i++) {
@@ -383,7 +452,14 @@ void UpdateDrawFrame(void)
                 DrawCircleV(buttons[i].position, buttons[i].radius, BLUE);
             }
         }
-        DrawCircleV(mainPlayerPosition, playerRadius, MAROON);
+        // Robot head at the river's end (the river is its body)
+        DrawRobot();
+
+        // Player: shadow stays at the true position, the witch bobs above it
+        DrawWitch(mainPlayerPosition, true);
+        Vector2 witchHover = mainPlayerPosition;
+        witchHover.y += sinf((float)GetTime()*5.0f)*4.0f;
+        DrawWitch(witchHover, false);
         DrawCircleLines(
             (int)mainPlayerPosition.x,
             (int)mainPlayerPosition.y,
@@ -414,7 +490,7 @@ static void BuildRivers(void)
     riverCount = 0;
 
     // Main river (blue): straight vertical channel flowing UPWARD (bottom to top)
-    int mouth = AddRiverNode((Vector2){ 465, 0 }, -1, true, false, BLANK);
+    int mouth = AddRiverNode((Vector2){ 465, 150 }, -1, true, false, BLANK);  // Ends under the robot head
     int junction = AddRiverNode((Vector2){ 465, 375 }, mouth, true, false, BLANK);
     AddRiverNode((Vector2){ 465, 720 }, junction, true, true, riverBlue);
 
@@ -695,5 +771,78 @@ static void RenderRiverPixels(float time)
 
             riverPixels[py*RIVER_RES + px] = out;
         }
+    }
+}
+
+//--------------------------------------------------------------------------------------------
+// Player sprite
+//--------------------------------------------------------------------------------------------
+// Shared palette for all ASCII sprites (witch, robot, ...)
+static Color SpriteColor(char c)
+{
+    switch (c)
+    {
+        case 'T': return (Color){ 106, 64, 156, 255 };  // Hat cone
+        case 'A': return (Color){ 217, 168, 60, 255 };  // Gold (hat band, antenna ball)
+        case 'H': return (Color){ 58, 32, 92, 255 };    // Brim
+        case 'E': return (Color){ 36, 26, 48, 255 };    // Eyes
+        case 'R': return (Color){ 84, 48, 128, 255 };   // Robe
+        case 'B': return (Color){ 138, 90, 43, 255 };   // Broom stick
+        case 'Y': return (Color){ 201, 151, 77, 255 };  // Bristles
+        case 'K': return (Color){ 42, 32, 48, 255 };    // Near-black (boots, robot face)
+        case 'D': return (Color){ 57, 64, 74, 255 };    // Dark metal outline
+        case 'M': return (Color){ 152, 161, 173, 255 }; // Metal
+        case 'L': return (Color){ 201, 209, 218, 255 }; // Screen light
+        case 'G': return (Color){ 168, 178, 192, 255 }; // Screen shade
+        default: return (Color){ 232, 184, 138, 255 };  // 'F'/'S' skin
+    }
+}
+
+// Draw an ASCII sprite (or its drop shadow) snapped to the low-res pixel grid.
+// Each sprite pixel is drawn as one RIVER_PIXEL-sized rectangle on top of the
+// scene texture, so it stays on the same grid as the pixel-art scene
+static void DrawSprite(const char **rows, int w, int h, Vector2 worldPos, bool flipX, bool shadow)
+{
+    // Round (don't truncate) so sprites center correctly on half-pixel positions
+    int left = (int)roundf(worldPos.x/RIVER_PIXEL) - w/2 + (shadow? 2 : 0);
+    int top = (int)roundf(worldPos.y/RIVER_PIXEL) - h/2 + (shadow? 3 : 0);
+
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            char c = rows[y][flipX? (w - 1 - x) : x];
+            if (c == '.') continue;
+
+            int bx = left + x;
+            int by = top + y;
+            Color col = shadow? (Color){ 10, 10, 20, 115 } : SpriteColor(c);
+            DrawRectangle((int)(bx*RIVER_PIXEL), (int)(by*RIVER_PIXEL),
+                          (int)RIVER_PIXEL, (int)RIVER_PIXEL, col);
+        }
+    }
+}
+
+static void DrawWitch(Vector2 worldPos, bool shadow)
+{
+    DrawSprite(witchSprite, WITCH_SIZE, WITCH_SIZE, worldPos, witchFlipX, shadow);
+}
+
+// Robot head idle animation: gentle one-pixel bob plus blinking antenna ball
+static void DrawRobot(void)
+{
+    float t = (float)GetTime();
+    Vector2 pos = robotPosition;
+    pos.y += sinf(t*1.6f)*RIVER_PIXEL;      // Rounds to a 1 low-res pixel bob
+
+    DrawSprite(robotSprite, ROBOT_W, ROBOT_H, pos, false, false);
+
+    // Blink: overdraw the 3x3 antenna ball (sprite cells x30..32, y0..2) brighter
+    if (((int)(t*2.0f))%2 == 0)
+    {
+        int left = (int)roundf(pos.x/RIVER_PIXEL) - ROBOT_W/2;
+        int top = (int)roundf(pos.y/RIVER_PIXEL) - ROBOT_H/2;
+        DrawRectangle((int)((left + 30)*RIVER_PIXEL), (int)(top*RIVER_PIXEL),
+                      (int)(3*RIVER_PIXEL), (int)(3*RIVER_PIXEL), (Color){ 240, 224, 138, 255 });
     }
 }
