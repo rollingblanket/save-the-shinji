@@ -73,7 +73,8 @@ typedef struct RiverNode {
 typedef struct Door {
     Rectangle rect;
     int sideRiverIndex;
-    bool open; // A door is closed by defeault
+    bool open;      // A door is closed by default
+    bool frogged;   // Opened by the spell: a frog sits here now
 } Door;
 
 typedef struct DoorDef {
@@ -195,24 +196,7 @@ static const float bayer4[4][4] = {
     { 0.97f, 0.47f, 0.84f, 0.34f }
 };
 
-//----------------------------------------------------------------------------------
-// River colors, should be standard across all 
-//----------------------------------------------------------------------------------
-// Water palette: three primaries, and the secondary each pair mixes into.
-// Merging looks up this table instead of averaging RGB, so mixed water stays
-// saturated instead of going muddy/washed out
-static const Color riverBlue = { 47, 111, 208, 255 };
-static const Color riverRed = { 192, 58, 43, 255 };
-static const Color riverYellow = { 232, 180, 40, 255 };
-static const Color riverPurple = { 136, 60, 184, 255 };  // red + blue
-static const Color riverOrange = { 230, 126, 34, 255 };  // red + yellow
-static const Color riverGreen = { 62, 168, 82, 255 };    // blue + yellow
-static const Color riverVermilion = { 0xD3, 0x5C, 0x26, 0xFF };  // red + orange (#D35C26)
-static const Color riverAmber = { 0xE7, 0x99, 0x25, 0xFF };      // yellow + orange (#E79925)
-static const Color riverChartreuse = { 0x93, 0xAE, 0x3D, 0xFF }; // yellow + green (#93AE3D)
-static const Color riverTeal = { 0x36, 0x8C, 0x91, 0xFF };       // blue + green (#368C91)
-static const Color riverViolet = { 0x5C, 0x56, 0xC4, 0xFF };     // blue + purple (#5C56C4)
-static const Color riverMagenta = { 0xA4, 0x3B, 0x72, 0xFF };    // red + purple (#A43B72)
+#include "river_colors.h"
 
 //----------------------------------------------------------------------------------
 // Witch sprite (3/4 view, ASCII bitmap: each char is one low-res pixel,
@@ -315,6 +299,42 @@ static const char *robotSpriteHappy[ROBOT_H] = {
 };
 static const Vector2 robotPosition = { (float)screenWidth/2, 96 };  // Head center, over the river mouth
 
+// Thought bubble shown right of the robot: a snippet of river (two banks with
+// water between) in the color he wants. 'C' pixels resolve to robotWantedColor
+// at draw time, so the bubble recolors itself per level. Tail dots bottom-left
+#define BUBBLE_W 24
+#define BUBBLE_H 15
+static const char *bubbleSprite[BUBBLE_H] = {
+    "......KKKKKKKKKK........",
+    "....KKLLLLLLLLLLKK......",
+    "...KLLLLLLLLLLLLLLLK....",
+    "..KLLLLLLLLLLLLLLLLLK...",
+    ".KLLLLLLLLLLLLLLLLLLLK..",
+    ".KLLKKKKKKKKKKKKKKKLLK..",
+    ".KLLCCCCCCCCCCCCCCCLLK..",
+    ".KLLCCCCCCCCCCCCCCCLLK..",
+    ".KLLCCCCCCCCCCCCCCCLLK..",
+    ".KLLKKKKKKKKKKKKKKKLLK..",
+    ".KLLLLLLLLLLLLLLLLLLLK..",
+    "..KLLLLLLLLLLLLLLLLLK...",
+    "...KLLLLLLLLLLLLLLLK....",
+    "....KKLLLLLLLLLLKK......",
+    "......KKKKKKKKKK........"
+};
+
+// Mini bubbles trailing between the robot and the thought bubble
+static const char *miniBubbleBig[4] = {
+    ".KK.",
+    "KLLK",
+    "KLLK",
+    ".KK."
+};
+static const char *miniBubbleSmall[3] = {
+    ".K.",
+    "KLK",
+    ".K."
+};
+
 // Level goal: the robot is happy once water of the color it wants ARRIVES at the
 // river mouth (not just when the steady-state color changes on merge)
 static Color robotWantedColor = { 0 };  // Target water color, set in BuildRivers()
@@ -327,13 +347,13 @@ static int riverMouthIndex = 0;         // Node index of the main river mouth (u
 // is visible: cast -> frog -> red water flows -> color front reaches the robot
 //----------------------------------------------------------------------------------
 typedef enum {
-    GATE_CLOSED = 0,    // Gate blocks the side river, spell not cast yet
-    SPELL_FLYING,       // Spark travels from the witch to the gate
-    GATE_TRANSFORM,     // Poof! Gate is turning into a frog
-    GATE_FROG           // Frog sits where the gate was, rivers merged
+    GATE_CLOSED = 0,    // Idle: no spell in flight, gates castable
+    SPELL_FLYING,       // Spark travels from the witch to the target gate
+    GATE_TRANSFORM      // Poof! Target gate is turning into a frog
 } SpellState;
 
 static SpellState spellState = GATE_CLOSED;
+static int spellTargetDoor = -1;            // Door the current spell is aimed at
 static Vector2 spellPos = { 0 };            // Current position of the flying spark
 static float spellTimer = 0.0f;             // Timer for the transform poof
 static const float spellSpeed = 300.0f;     // Spark travel speed (pixels/second)
@@ -436,7 +456,7 @@ int main(void)
     InitWindow(screenWidth, screenHeight, "raylib gamejam template");
     
     // TODO: Load resources / Initialize variables at this point
-    LoadLevel(0);
+    LoadLevel(1);
 
     // Low-res scene texture, upscaled with point filtering for crisp pixels
     Image riverImage = GenImageColor(RIVER_RES, RIVER_RES, BLACK);
@@ -733,7 +753,7 @@ static void BuildRivers(const LevelDef *level)
     {
         junctionNodes[i] = AddRiverNode((Vector2){ mainX, junctionYs[i] }, true, false, BLANK, -1);
     }
-    int mainSource = AddRiverNode((Vector2){ mainX, (float)screenHeight }, true, true, riverOrange, -1);
+    int mainSource = AddRiverNode((Vector2){ mainX, (float)screenHeight }, true, true, riverBlue, -1);
 
     for (int i = 0; i < uniqueJunctionCount; i++)
     {
@@ -769,6 +789,7 @@ static void BuildRivers(const LevelDef *level)
     riversMerged = false;
     riverFlowAccum = 0.0f;
     spellState = GATE_CLOSED;
+    spellTargetDoor = -1;
     spellTimer = 0.0f;
     robotWantedColor = level->robotWantedColor;
     robotHappy = false;
@@ -939,16 +960,26 @@ static void UpdateRobotMood(void)
     if (ColorNear(RiverNodeOutputColor(riverMouthIndex), robotWantedColor, 10)) robotHappy = true;
 }
 
-// Cast the spell: only works once, and only when the witch stands near the gate
+// Cast the spell at the nearest closed gate within range (one spell at a time)
 static void StartSpell(void)
 {
     if (spellState != GATE_CLOSED) return;
-    if (doorCount <= 0) return;
-    if (doors[0].open) return;
 
-    Vector2 gatePosition = DoorCenter(&doors[0]);
-    if (Vector2Distance(mainPlayerPosition, gatePosition) > gateCastRadius) return;
+    int targetDoor = -1;
+    float targetDist = gateCastRadius;
+    for (int i = 0; i < doorCount; i++)
+    {
+        if (doors[i].open) continue;
+        float dist = Vector2Distance(mainPlayerPosition, DoorCenter(&doors[i]));
+        if (dist <= targetDist)
+        {
+            targetDist = dist;
+            targetDoor = i;
+        }
+    }
+    if (targetDoor < 0) return;
 
+    spellTargetDoor = targetDoor;
     spellState = SPELL_FLYING;
     spellPos = mainPlayerPosition;
 }
@@ -957,8 +988,8 @@ static void StartSpell(void)
 // the rivers actually merge (this is where the old R-key merge code moved to)
 static void UpdateSpell(float dt)
 {
-    if (doorCount <= 0) return;
-    Vector2 gatePosition = DoorCenter(&doors[0]);
+    if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount)) return;
+    Vector2 gatePosition = DoorCenter(&doors[spellTargetDoor]);
 
     if (spellState == SPELL_FLYING)
     {
@@ -978,10 +1009,12 @@ static void UpdateSpell(float dt)
         spellTimer += dt;
         if (spellTimer >= transformTime)
         {
-            spellState = GATE_FROG;
-            doors[0].open = true;
+            doors[spellTargetDoor].open = true;
+            doors[spellTargetDoor].frogged = true;
             riversMerged = true;
             PropagateRiverColors();
+            spellState = GATE_CLOSED;   // Idle again: the witch can cast at the next gate
+            spellTargetDoor = -1;
         }
     }
 }
@@ -1118,12 +1151,21 @@ static void RenderRiverPixels(float time)
 
                         JunctionRender *junction = &junctions[nearestJunction];
 
-                        // Build a curved boundary line, a quarter-circle arc
-                        float sideBankX = junction->position.x + junction->sideDir*channelHalfWidth;
-                        float ax = (p.x - sideBankX)*-junction->sideDir; // Distance into the channel from the side mouth
+                        // Curved hand-off boundary: one quarter-circle arc per mouth.
+                        // Several side rivers may share one junction (same y), so take
+                        // the highest boundary among the co-located mouths - each
+                        // entering river sweeps upward from its own bank
                         float arcR = 2.0f*channelHalfWidth;
                         float boundaryY = junction->position.y + channelHalfWidth - arcR;
-                        if ((ax >= 0.0f) && (ax < arcR)) boundaryY += sqrtf(arcR*arcR - ax*ax);
+                        for (int j = 0; j < junctionCount; j++)
+                        {
+                            if (fabsf(junctions[j].position.y - junction->position.y) > 1.0f) continue;
+                            float sideBankX = junctions[j].position.x + junctions[j].sideDir*channelHalfWidth;
+                            float ax = (p.x - sideBankX)*-junctions[j].sideDir;
+                            float bY = junctions[j].position.y + channelHalfWidth - arcR;
+                            if ((ax >= 0.0f) && (ax < arcR)) bY += sqrtf(arcR*arcR - ax*ax);
+                            if (bY > boundaryY) boundaryY = bY;
+                        }
 
                         // Ordered-dither blend across a band instead of a hard edge
                         float blend = (boundaryY - p.y)/24.0f + 0.5f;   // 1 = merged side, 0 = upstream
@@ -1229,6 +1271,7 @@ static Color SpriteColor(char c)
         case 'G': return (Color){ 168, 178, 192, 255 }; // Screen shade
         case 'P': return (Color){ 95, 180, 86, 255 };   // Frog green
         case 'Q': return (Color){ 178, 222, 146, 255 }; // Frog belly
+        case 'C': return robotWantedColor;              // Thought-bubble river water
         default: return (Color){ 232, 184, 138, 255 };  // 'F'/'S' skin
     }
 }
@@ -1272,6 +1315,42 @@ static void DrawRobot(void)
 
     DrawSprite(robotHappy? robotSpriteHappy : robotSprite, ROBOT_W, ROBOT_H, pos, false, false);
 
+    // Thought bubble on the right showing the river color he wants,
+    // floating with the same bob (slightly out of phase). Gone once happy
+    if (!robotHappy)
+    {
+        Vector2 bubblePos = { robotPosition.x + 216, robotPosition.y - 48 + sinf(t*1.6f + 1.0f)*RIVER_PIXEL };
+        DrawSprite(bubbleSprite, BUBBLE_W, BUBBLE_H, bubblePos, false, false);
+
+        // The snippet flows like a real river: same waterline + moving streaks
+        // treatment as RenderRiverPixels, applied to the bubble's 'C' cells
+        int left = (int)roundf(bubblePos.x/RIVER_PIXEL) - BUBBLE_W/2;
+        int top = (int)roundf(bubblePos.y/RIVER_PIXEL) - BUBBLE_H/2;
+        for (int y = 6; y <= 8; y++)
+        {
+            for (int x = 4; x <= 18; x++)
+            {
+                Color w = robotWantedColor;
+                if ((y == 6) || (y == 8)) w = WaterDark(w);     // Waterline edges
+                else
+                {
+                    // Streaks drift toward the robot, same speed as real water
+                    float sp = fmodf(x*RIVER_PIXEL + t*RIVER_FLOW_SPEED, 90.0f);
+                    if ((sp < 24.0f) && (((x*7 + y*3)%5) < 3)) w = WaterLight(w);
+                }
+                DrawRectangle((int)((left + x)*RIVER_PIXEL), (int)((top + y)*RIVER_PIXEL),
+                              (int)RIVER_PIXEL, (int)RIVER_PIXEL, w);
+            }
+        }
+
+        // Mini bubbles leading from the robot up to the thought bubble,
+        // each bobbing on its own phase
+        Vector2 miniBig = { robotPosition.x + 168, robotPosition.y - 6 + sinf(t*1.6f + 2.2f)*RIVER_PIXEL };
+        Vector2 miniSmall = { robotPosition.x + 132, robotPosition.y + 24 + sinf(t*1.6f + 3.4f)*RIVER_PIXEL };
+        DrawSprite(miniBubbleBig, 4, 4, miniBig, false, false);
+        DrawSprite(miniBubbleSmall, 3, 3, miniSmall, false, false);
+    }
+
     // Blink: overdraw the 3x3 antenna ball (sprite cells x30..32, y0..2) brighter.
     // Blinks faster when happy
     if (((int)(t*(robotHappy? 6.0f : 2.0f)))%2 == 0)
@@ -1283,26 +1362,40 @@ static void DrawRobot(void)
     }
 }
 
-// Gate / spark / poof / frog, drawn on the same low-res pixel grid as the scene
+// Gates / spark / poof / frogs, drawn on the same low-res pixel grid as the scene
 static void DrawSpellScene(void)
 {
-    if (doorCount <= 0) return;
-
     float t = (float)GetTime();
-    Vector2 gatePosition = DoorCenter(&doors[0]);
 
-    if (spellState == GATE_CLOSED || spellState == SPELL_FLYING)
+    // Every closed door shows its gate; every spell-opened door shows its frog
+    for (int i = 0; i < doorCount; i++)
     {
-        DrawSprite(gateSprite, GATE_W, GATE_H, gatePosition, false, false);
+        Vector2 doorPosition = DoorCenter(&doors[i]);
 
-        // Cast-range hint: pulsing ring while the witch is close enough to cast
-        if ((spellState == GATE_CLOSED) &&
-            (Vector2Distance(mainPlayerPosition, gatePosition) <= gateCastRadius))
+        if (!doors[i].open)
         {
-            DrawCircleLines((int)gatePosition.x, (int)gatePosition.y,
-                            gateCastRadius + sinf(t*6.0f)*3.0f, YELLOW);
+            // The transform effect draws the target gate itself (lingering half-poof)
+            if ((spellState == GATE_TRANSFORM) && (i == spellTargetDoor)) continue;
+
+            DrawSprite(gateSprite, GATE_W, GATE_H, doorPosition, false, false);
+
+            // Cast-range hint: pulsing ring while the witch is close enough to cast
+            if ((spellState == GATE_CLOSED) &&
+                (Vector2Distance(mainPlayerPosition, doorPosition) <= gateCastRadius))
+            {
+                DrawCircleLines((int)doorPosition.x, (int)doorPosition.y,
+                                gateCastRadius + sinf(t*6.0f)*3.0f, YELLOW);
+            }
+        }
+        else if (doors[i].frogged)
+        {
+            const char **frame = (((int)(t*2.0f))%2 == 0)? frogSprite1 : frogSprite2;
+            DrawSprite(frame, FROG_W, FROG_H, doorPosition, false, false);
         }
     }
+
+    if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount)) return;
+    Vector2 gatePosition = DoorCenter(&doors[spellTargetDoor]);
 
     if (spellState == SPELL_FLYING)
     {
@@ -1331,12 +1424,5 @@ static void DrawSpellScene(void)
         DrawRectangle((int)(gatePosition.x + spread - 4), (int)(gatePosition.y - 4), 8, 8, (Color){ 255, 244, 180, a });
         DrawRectangle((int)(gatePosition.x - 4), (int)(gatePosition.y - spread - 4), 8, 8, (Color){ 255, 244, 180, a });
         DrawRectangle((int)(gatePosition.x - 4), (int)(gatePosition.y + spread - 4), 8, 8, (Color){ 255, 244, 180, a });
-    }
-    else if (spellState == GATE_FROG)
-    {
-        // Frog idles on the bank above the channel, alternating two frames
-        Vector2 frogPos = { gatePosition.x, gatePosition.y };
-        const char **frame = (((int)(t*2.0f))%2 == 0)? frogSprite1 : frogSprite2;
-        DrawSprite(frame, FROG_W, FROG_H, frogPos, false, false);
     }
 }
