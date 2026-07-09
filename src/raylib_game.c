@@ -243,7 +243,49 @@ static const char *robotSprite[ROBOT_H] = {
     "................................................",
     "................................................"
 };
+// Happy variant of the robot head: same shell, but the screen shows arc eyes
+// and a smile. Drawn instead of robotSprite once robotHappy is set
+static const char *robotSpriteHappy[ROBOT_H] = {
+    "..............................AAA...............",
+    "..............................AAA...............",
+    "..............................AAA...............",
+    ".............................D..................",
+    "............................D...................",
+    "...........................D....................",
+    "...........................D....................",
+    "...........................D....................",
+    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
+    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
+    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
+    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
+    ".DDDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDDD.",
+    "DMMDMMMMDLLLLLLKKLLLLLLLLLLLLLLKKLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLKLLKLLLLLLLLLLLLKLLKLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
+    ".DDDMMMMDLLLLLLLLLLKLLLLLLLLKLLLLLLLLLGDMMMMDDD.",
+    "...DMMMMDLLLLLLLLLLLKLLLLLLKLLLLLLLLLLGDMMMMD...",
+    "...DMMMMDLLLLLLLLLLLLKKKKKKLLLLLLLLLLLGDMMMMD...",
+    "...DMMMMDGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGDMMMMD...",
+    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
+    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
+    "................................................",
+    "................................................"
+};
 static const Vector2 robotPosition = { (float)screenWidth/2, 96 };  // Head center, over the river mouth
+
+// Level goal: the robot is happy once water of the color it wants ARRIVES at the
+// river mouth (not just when the steady-state color changes on merge)
+static Color robotWantedColor = { 0 };  // Target water color, set in BuildRivers()
+static bool robotHappy = false;         // Latched true when the wanted color reaches the mouth
+static int riverMouthIndex = 0;         // Node index of the main river mouth (under the robot)
 
 //----------------------------------------------------------------------------------
 // River layout: the main river always runs vertically through the screen center
@@ -261,6 +303,7 @@ static void UpdateDrawFrame(void);      // Update and Draw one frame
 static void BuildRivers(void);          // Create the river network
 static void PropagateRiverColors(void); // Recompute steady-state colors/flow (topological order)
 static void UpdateRiverFlow(float dt);  // Advect color samples downstream
+static void UpdateRobotMood(void);      // Latch robotHappy once the wanted color arrives at the mouth
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
 // Draw an ASCII sprite snapped to the low-res pixel grid (shadow = flat dark silhouette)
@@ -414,6 +457,7 @@ void UpdateDrawFrame(void)
                                  cur.y + cur.height - playerRadius);
 
         UpdateRiverFlow(GetFrameTime());
+    UpdateRobotMood();
 
 
     frameCounter++;
@@ -451,7 +495,8 @@ void UpdateDrawFrame(void)
             (Rectangle){ 0, 0, (float)screenWidth, (float)screenHeight },
             (Vector2){ 0, 0 }, 0.0f, WHITE);
 
-        if (!riversMerged) DrawText("Press R to merge the rivers", 20, 690, 20, RAYWHITE);
+        if (robotHappy) DrawText("Level complete! Press SPACE to reset", 20, 690, 20, YELLOW);
+        else if (!riversMerged) DrawText("Press R to merge the rivers", 20, 690, 20, RAYWHITE);
         else DrawText("Merged! Press SPACE to reset", 20, 690, 20, RAYWHITE);
 
 
@@ -505,6 +550,7 @@ static void BuildRivers(void)
     // always centered on the screen
     float mainX = (float)screenWidth/2;
     int mouth = AddRiverNode((Vector2){ mainX, mainRiverMouthY }, -1, true, false, BLANK);
+    riverMouthIndex = mouth;
     int junction = AddRiverNode((Vector2){ mainX, sideRiverJunctionY }, mouth, true, false, BLANK);
     AddRiverNode((Vector2){ mainX, (float)screenHeight }, junction, true, true, riverBlue);
 
@@ -513,6 +559,16 @@ static void BuildRivers(void)
 
     riversMerged = false;
     riverFlowAccum = 0.0f;
+
+    // The robot wants the equal-flow mix of both sources (same math as
+    // PropagateRiverColors: flow-weighted average, both flows are 1.0)
+    robotWantedColor = (Color){
+        (unsigned char)((riverBlue.r + riverRed.r)/2),
+        (unsigned char)((riverBlue.g + riverRed.g)/2),
+        (unsigned char)((riverBlue.b + riverRed.b)/2),
+        255
+    };
+    robotHappy = false;
 
     PropagateRiverColors();
 
@@ -639,6 +695,22 @@ static Color RiverNodeOutputColor(int i)
     if (f <= 0.0f) return rivers[i].color;
     if (!riversMerged && hasMain) return mainCol;   // Side inflows don't tint the main river yet
     return (Color){ (unsigned char)(r/f), (unsigned char)(g/f), (unsigned char)(b/f), 255 };
+}
+
+// True if every RGB channel of a is within tol of b (mixing rounds channels,
+// so an exact == comparison would be off by one and never match)
+static bool ColorNear(Color a, Color b, int tol)
+{
+    return (abs(a.r - b.r) <= tol) && (abs(a.g - b.g) <= tol) && (abs(a.b - b.b) <= tol);
+}
+
+// Latch robotHappy once water of the wanted color physically arrives at the
+// river mouth (checked against the advected samples, so the face changes only
+// when the merged color front reaches the robot, not when R is pressed)
+static void UpdateRobotMood(void)
+{
+    if (robotHappy || !riversMerged) return;
+    if (ColorNear(RiverNodeOutputColor(riverMouthIndex), robotWantedColor, 10)) robotHappy = true;
 }
 
 // Advect: every RIVER_SAMPLE_SPACING pixels of travel, shift all segment
@@ -849,10 +921,11 @@ static void DrawRobot(void)
     Vector2 pos = robotPosition;
     pos.y += sinf(t*1.6f)*RIVER_PIXEL;      // Rounds to a 1 low-res pixel bob
 
-    DrawSprite(robotSprite, ROBOT_W, ROBOT_H, pos, false, false);
+    DrawSprite(robotHappy? robotSpriteHappy : robotSprite, ROBOT_W, ROBOT_H, pos, false, false);
 
-    // Blink: overdraw the 3x3 antenna ball (sprite cells x30..32, y0..2) brighter
-    if (((int)(t*2.0f))%2 == 0)
+    // Blink: overdraw the 3x3 antenna ball (sprite cells x30..32, y0..2) brighter.
+    // Blinks faster when happy
+    if (((int)(t*(robotHappy? 6.0f : 2.0f)))%2 == 0)
     {
         int left = (int)roundf(pos.x/RIVER_PIXEL) - ROBOT_W/2;
         int top = (int)roundf(pos.y/RIVER_PIXEL) - ROBOT_H/2;
