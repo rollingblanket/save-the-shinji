@@ -173,6 +173,10 @@ static const Color metalRamp[8] = {
 static const Color floorDark = { 38, 41, 47, 255 };
 static const Color floorMid = { 43, 46, 53, 255 };
 static const Color floorNoise = { 49, 53, 60, 255 };
+
+//----------------------------------------------------------------------------------
+// River colors, should be standard across all 
+//----------------------------------------------------------------------------------
 static const Color riverBlue = { 47, 111, 208, 255 };
 static const Color riverRed = { 192, 58, 43, 255 };
 
@@ -239,7 +243,15 @@ static const char *robotSprite[ROBOT_H] = {
     "................................................",
     "................................................"
 };
-static const Vector2 robotPosition = { 465, 96 };   // Head center, over the river mouth
+static const Vector2 robotPosition = { (float)screenWidth/2, 96 };  // Head center, over the river mouth
+
+//----------------------------------------------------------------------------------
+// River layout: the main river always runs vertically through the screen center
+// (screenWidth/2). Side rivers are the tweakable part
+//----------------------------------------------------------------------------------
+static const float mainRiverMouthY = 150.0f;        // Main river ends here (under the robot head)
+static const float sideRiverJunctionY = 375.0f;     // Where the side river joins the main river
+static const Vector2 sideRiverSource = { 0, 375 };  // Side river source (edit freely, diagonals work too)
 
 
 //----------------------------------------------------------------------------------
@@ -489,13 +501,15 @@ static void BuildRivers(void)
 {
     riverCount = 0;
 
-    // Main river (blue): straight vertical channel flowing UPWARD (bottom to top)
-    int mouth = AddRiverNode((Vector2){ 465, 150 }, -1, true, false, BLANK);  // Ends under the robot head
-    int junction = AddRiverNode((Vector2){ 465, 375 }, mouth, true, false, BLANK);
-    AddRiverNode((Vector2){ 465, 720 }, junction, true, true, riverBlue);
+    // Main river (blue): straight vertical channel flowing UPWARD (bottom to top),
+    // always centered on the screen
+    float mainX = (float)screenWidth/2;
+    int mouth = AddRiverNode((Vector2){ mainX, mainRiverMouthY }, -1, true, false, BLANK);
+    int junction = AddRiverNode((Vector2){ mainX, sideRiverJunctionY }, mouth, true, false, BLANK);
+    AddRiverNode((Vector2){ mainX, (float)screenHeight }, junction, true, true, riverBlue);
 
-    // Side river (red): horizontal channel entering the junction from the left
-    AddRiverNode((Vector2){ 0, 375 }, junction, false, true, riverRed);
+    // Side river (red): enters the junction from the side
+    AddRiverNode(sideRiverSource, junction, false, true, riverRed);
 
     riversMerged = false;
     riverFlowAccum = 0.0f;
