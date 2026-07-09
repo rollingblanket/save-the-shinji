@@ -354,6 +354,10 @@ typedef enum {
 
 static SpellState spellState = GATE_CLOSED;
 static int spellTargetDoor = -1;            // Door the current spell is aimed at
+
+// Restarting requires holding SPACE; a ring spinner shows the hold progress
+static float spaceHoldTime = 0.0f;
+static const float restartHoldTime = 1.0f;
 static Vector2 spellPos = { 0 };            // Current position of the flying spark
 static float spellTimer = 0.0f;             // Timer for the transform poof
 static const float spellSpeed = 300.0f;     // Spark travel speed (pixels/second)
@@ -439,6 +443,7 @@ static float RiverDistance(Vector2 p);      // Distance from a point to the rive
 static void DrawSprite(const char **rows, int w, int h, Vector2 worldPos, bool flipX, bool shadow);
 static void DrawWitch(Vector2 worldPos, bool shadow);  // Draw the player sprite (or its shadow)
 static void DrawRobot(void);                            // Robot head with idle bob + antenna blink
+static void DrawRestartSpinner(float progress);         // Hold-to-restart progress ring
 
 //------------------------------------------------------------------------------------
 // Program main entry point
@@ -456,7 +461,7 @@ int main(void)
     InitWindow(screenWidth, screenHeight, "raylib gamejam template");
     
     // TODO: Load resources / Initialize variables at this point
-    LoadLevel(1);
+    LoadLevel(0);
 
     // Low-res scene texture, upscaled with point filtering for crisp pixels
     Image riverImage = GenImageColor(RIVER_RES, RIVER_RES, BLACK);
@@ -511,11 +516,23 @@ void UpdateDrawFrame(void)
     // R casts the spell (only works near the gate)
     if (IsKeyDown(KEY_R)) StartSpell();
 
-    if (IsKeyPressed(KEY_SPACE))
+    // SPACE: advancing after a win is a simple press, but restarting mid-level
+    // must be HELD for a moment so a stray tap doesn't wipe progress
+    if (robotHappy)
     {
-        int nextLevel = robotHappy? (currentLevelIndex + 1)%levelCount : currentLevelIndex;
-        LoadLevel(nextLevel);
+        spaceHoldTime = 0.0f;
+        if (IsKeyPressed(KEY_SPACE)) LoadLevel((currentLevelIndex + 1)%levelCount);
     }
+    else if (IsKeyDown(KEY_SPACE))
+    {
+        spaceHoldTime += GetFrameTime();
+        if (spaceHoldTime >= restartHoldTime)
+        {
+            spaceHoldTime = 0.0f;
+            LoadLevel(currentLevelIndex);
+        }
+    }
+    else spaceHoldTime = 0.0f;
 
 
     // Face the direction of horizontal travel (sprite flips, bristles trail behind)
@@ -562,10 +579,11 @@ void UpdateDrawFrame(void)
             (Rectangle){ 0, 0, (float)screenWidth, (float)screenHeight },
             (Vector2){ 0, 0 }, 0.0f, WHITE);
 
-        if (robotHappy) DrawText("Level complete! Press SPACE to reset", 20, 690, 20, YELLOW);
-        else if (!riversMerged) DrawText("Cast a spell (R) next to the gate to free the river", 20, 690, 20, RAYWHITE);
-        else DrawText("Merged! Press SPACE to reset", 20, 690, 20, RAYWHITE);
-
+        if (robotHappy) DrawText("Level complete! Press SPACE to continue", 20, 690, 20, YELLOW);
+        else {
+            DrawText("Cast a spell (R) next to the gate to free the river", 20, 660, 20, RAYWHITE);
+            DrawText("Press and hold SPACE to restart", 20, 690, 20, RAYWHITE);
+        }
 
         // Gate / spell spark / poof / frog, depending on the spell state
         DrawSpellScene();
@@ -584,6 +602,9 @@ void UpdateDrawFrame(void)
             interactionRadius,
             LIGHTGRAY
         );
+
+        // Hold-to-restart progress spinner, center screen
+        if (spaceHoldTime > 0.0f) DrawRestartSpinner(spaceHoldTime/restartHoldTime);
         // TODO: Draw everything that requires to be drawn at this point, maybe UI?
 
     EndDrawing();
@@ -1361,6 +1382,8 @@ static void DrawRobot(void)
                       (int)(3*RIVER_PIXEL), (int)(3*RIVER_PIXEL), (Color){ 240, 224, 138, 255 });
     }
 }
+
+#include "restart_spinner.inc"
 
 // Gates / spark / poof / frogs, drawn on the same low-res pixel grid as the scene
 static void DrawSpellScene(void)
