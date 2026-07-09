@@ -61,6 +61,7 @@ typedef struct RiverNode {
     int downstream;         // Index of node this one flows into, -1 = river mouth
     bool isMain;            // Part of the main river (side rivers may flow into it)
     bool isSource;
+    int sideRiverIndex;     // -1 for main river nodes; side source id otherwise
     Color sourceColor;      // Fixed color, only used when isSource
     Color color;            // Computed: steady-state color of water leaving this node
     float flow;             // Computed: water volume through this node, 0 = dry
@@ -71,8 +72,14 @@ typedef struct RiverNode {
 // A door that controls one (or one portion of a) side river.
 typedef struct Door {
     Rectangle rect;
+    int sideRiverIndex;
     bool open; // A door is closed by defeault
 } Door;
+
+typedef struct DoorDef {
+    int sideRiverIndex;
+    bool open;
+} DoorDef;
 
 // A button that controls opening of a door tagged by `doorIndex`.
 typedef struct Button {
@@ -81,14 +88,34 @@ typedef struct Button {
     int doorIndex;      // Which door this button controls
 } Button;
 
+typedef struct SideRiverDef {
+    Vector2 source;
+    Color sourceColor;
+    float junctionY;
+} SideRiverDef;
+
 // Contains every object of a level.
-typedef struct Level {
-    Button *buttons;
+typedef struct LevelDef {
+    const SideRiverDef *sideRivers;
+    int sideRiverCount;
+
+    const Button *buttons;
     int buttonCount;
 
-    Door *doors;
+    const DoorDef *doors;
     int doorCount;
-} Level;
+
+    Vector2 playerSpawn;
+    Color robotWantedColor;
+} LevelDef;
+
+typedef struct JunctionRender {
+    Vector2 position;
+    float sideDir;
+    int upperMainSegment;
+    int lowerMainSegment;
+    int sideSegment;
+} JunctionRender;
 
 //----------------------------------------------------------------------------------
 // Global Variables Definition (local to this module)
@@ -114,10 +141,21 @@ static Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight 
 // River globals
 //----------------------------------------------------------------------------------
 #define MAX_RIVER_NODES 32
+#define MAX_SIDE_RIVERS 8
+#define MAX_LEVEL_DOORS 8
+#define MAX_LEVEL_BUTTONS 8
+#define MAX_JUNCTIONS MAX_SIDE_RIVERS
 static RiverNode rivers[MAX_RIVER_NODES] = { 0 };
 static int riverCount = 0;
 static bool riversMerged = false;   // Until true, junctions keep the main river's color
 static float riverFlowAccum = 0.0f; // Distance accumulator for advection steps
+static JunctionRender junctions[MAX_JUNCTIONS] = { 0 };
+static int junctionCount = 0;
+static Door doors[MAX_LEVEL_DOORS] = { 0 };
+static int doorCount = 0;
+static Button buttons[MAX_LEVEL_BUTTONS] = { 0 };
+static int buttonCount = 0;
+static int currentLevelIndex = 0;
 
 // Pixel-art scene renderer: the whole scene (floor, walls, water) is generated
 // per-pixel into a low-res buffer from a distance field around the river
@@ -148,11 +186,33 @@ static const Color floorDark = { 38, 41, 47, 255 };
 static const Color floorMid = { 43, 46, 53, 255 };
 static const Color floorNoise = { 49, 53, 60, 255 };
 
+// 4x4 Bayer matrix for ordered dithering: color transitions blend across a band
+// by comparing against these thresholds, giving smooth pixel-art gradients
+static const float bayer4[4][4] = {
+    { 0.03f, 0.53f, 0.16f, 0.66f },
+    { 0.78f, 0.28f, 0.91f, 0.41f },
+    { 0.22f, 0.72f, 0.09f, 0.59f },
+    { 0.97f, 0.47f, 0.84f, 0.34f }
+};
+
 //----------------------------------------------------------------------------------
 // River colors, should be standard across all 
 //----------------------------------------------------------------------------------
+// Water palette: three primaries, and the secondary each pair mixes into.
+// Merging looks up this table instead of averaging RGB, so mixed water stays
+// saturated instead of going muddy/washed out
 static const Color riverBlue = { 47, 111, 208, 255 };
 static const Color riverRed = { 192, 58, 43, 255 };
+static const Color riverYellow = { 232, 180, 40, 255 };
+static const Color riverPurple = { 136, 60, 184, 255 };  // red + blue
+static const Color riverOrange = { 230, 126, 34, 255 };  // red + yellow
+static const Color riverGreen = { 62, 168, 82, 255 };    // blue + yellow
+static const Color riverVermilion = { 0xD3, 0x5C, 0x26, 0xFF };  // red + orange (#D35C26)
+static const Color riverAmber = { 0xE7, 0x99, 0x25, 0xFF };      // yellow + orange (#E79925)
+static const Color riverChartreuse = { 0x93, 0xAE, 0x3D, 0xFF }; // yellow + green (#93AE3D)
+static const Color riverTeal = { 0x36, 0x8C, 0x91, 0xFF };       // blue + green (#368C91)
+static const Color riverViolet = { 0x5C, 0x56, 0xC4, 0xFF };     // blue + purple (#5C56C4)
+static const Color riverMagenta = { 0xA4, 0x3B, 0x72, 0xFF };    // red + purple (#A43B72)
 
 //----------------------------------------------------------------------------------
 // Witch sprite (3/4 view, ASCII bitmap: each char is one low-res pixel,
@@ -279,9 +339,8 @@ static float spellTimer = 0.0f;             // Timer for the transform poof
 static const float spellSpeed = 300.0f;     // Spark travel speed (pixels/second)
 static const float transformTime = 0.25f;   // Poof duration (seconds)
 
-// Gate sits on the side river just before the junction; the witch must stand
-// within gateCastRadius of it to cast
-static const Vector2 gatePosition = { (float)screenWidth/2 - 90, 375 };
+// The gate is drawn at door 0, which is derived from its side river mouth; the
+// witch must stand within gateCastRadius of it to cast.
 static const float gateCastRadius = 60.0f;
 
 // Gate sprite: vertical bars across the side river channel
@@ -337,21 +396,44 @@ static const char *frogSprite2[FROG_H] = {
 // (screenWidth/2). Side rivers are the tweakable part
 //----------------------------------------------------------------------------------
 static const float mainRiverMouthY = 150.0f;        // Main river ends here (under the robot head)
-static const float sideRiverJunctionY = 375.0f;     // Where the side river joins the main river
-static const Vector2 sideRiverSource = { 0, 375 };  // Side river source (edit freely, diagonals work too)
+
+static const SideRiverDef level0SideRivers[] = {
+    { .source = { 0, 375 }, .sourceColor = riverVermilion, .junctionY = 375.0f }
+};
+
+static const DoorDef level0Doors[] = {
+    { .sideRiverIndex = 0, .open = false }
+};
+
+static const LevelDef levelDefs[] = {
+    {
+        .sideRivers = level0SideRivers,
+        .sideRiverCount = 1,
+        .buttons = NULL,
+        .buttonCount = 0,
+        .doors = level0Doors,
+        .doorCount = 1,
+        .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
+        .robotWantedColor = { 136, 60, 184, 255 }
+    }
+};
+
+static const int levelCount = sizeof(levelDefs)/sizeof(levelDefs[0]);
 
 
 //----------------------------------------------------------------------------------
 // Module Functions Declaration
 //----------------------------------------------------------------------------------
 static void UpdateDrawFrame(void);      // Update and Draw one frame
-static void BuildRivers(void);          // Create the river network
+static void LoadLevel(int levelIndex);  // Reset level runtime state and create river network
+static void BuildRivers(const LevelDef *level); // Create the river network from level data
 static void PropagateRiverColors(void); // Recompute steady-state colors/flow (topological order)
 static void UpdateRiverFlow(float dt);  // Advect color samples downstream
 static void UpdateRobotMood(void);      // Latch robotHappy once the wanted color arrives at the mouth
 static void StartSpell(void);           // Cast if the witch is near the gate (R key)
 static void UpdateSpell(float dt);      // Spell state machine: fly -> poof -> frog + merge
 static void DrawSpellScene(void);       // Draw gate / spark / poof / frog by state
+static bool SideRiverIsOpen(int sideRiverIndex); // True if no closed door blocks that side source
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
 // Draw an ASCII sprite snapped to the low-res pixel grid (shadow = flat dark silhouette)
@@ -375,7 +457,7 @@ int main(void)
     InitWindow(screenWidth, screenHeight, "raylib gamejam template");
     
     // TODO: Load resources / Initialize variables at this point
-    BuildRivers();
+    LoadLevel(0);
 
     // Low-res scene texture, upscaled with point filtering for crisp pixels
     Image riverImage = GenImageColor(RIVER_RES, RIVER_RES, BLACK);
@@ -430,7 +512,11 @@ void UpdateDrawFrame(void)
     // R casts the spell (only works near the gate)
     if (IsKeyDown(KEY_R)) StartSpell();
 
-    if (IsKeyPressed(KEY_SPACE)) BuildRivers();     // Reset demo
+    if (IsKeyPressed(KEY_SPACE))
+    {
+        int nextLevel = robotHappy? (currentLevelIndex + 1)%levelCount : currentLevelIndex;
+        LoadLevel(nextLevel);
+    }
 
 
     // Face the direction of horizontal travel (sprite flips, bristles trail behind)
@@ -508,49 +594,60 @@ void UpdateDrawFrame(void)
 //--------------------------------------------------------------------------------------------
 // River network functions
 //--------------------------------------------------------------------------------------------
-static int AddRiverNode(Vector2 position, int downstream, bool isMain, bool isSource, Color sourceColor)
+static int AddRiverNode(Vector2 position, bool isMain, bool isSource, Color sourceColor, int sideRiverIndex)
 {
+    if (riverCount >= MAX_RIVER_NODES)
+    {
+        LOG("Too many river nodes; increase MAX_RIVER_NODES\n");
+        return MAX_RIVER_NODES - 1;
+    }
+
     rivers[riverCount] = (RiverNode){
-        .position = position, .downstream = downstream, .isMain = isMain,
-        .isSource = isSource, .sourceColor = sourceColor, .color = sourceColor
+        .position = position,
+        .downstream = -1,
+        .isMain = isMain,
+        .isSource = isSource,
+        .sideRiverIndex = sideRiverIndex,
+        .sourceColor = sourceColor,
+        .color = sourceColor
     };
     return riverCount++;
 }
 
-// Build the rivers. Nodes are added mouth-first so downstream indices already exist
-static void BuildRivers(void)
+static void SortJunctionYs(float *ys, int count)
 {
-    riverCount = 0;
+    for (int i = 1; i < count; i++)
+    {
+        float y = ys[i];
+        int j = i - 1;
+        while ((j >= 0) && (ys[j] > y))
+        {
+            ys[j + 1] = ys[j];
+            j--;
+        }
+        ys[j + 1] = y;
+    }
+}
 
-    // Main river (blue): straight vertical channel flowing UPWARD (bottom to top),
-    // always centered on the screen
-    float mainX = (float)screenWidth/2;
-    int mouth = AddRiverNode((Vector2){ mainX, mainRiverMouthY }, -1, true, false, BLANK);
-    riverMouthIndex = mouth;
-    int junction = AddRiverNode((Vector2){ mainX, sideRiverJunctionY }, mouth, true, false, BLANK);
-    AddRiverNode((Vector2){ mainX, (float)screenHeight }, junction, true, true, riverBlue);
+static int FindJunctionY(const float *ys, int count, float y)
+{
+    for (int i = 0; i < count; i++)
+    {
+        if (fabsf(ys[i] - y) < 0.5f) return i;
+    }
+    return -1;
+}
 
-    // Side river (red): enters the junction from the side
-    AddRiverNode(sideRiverSource, junction, false, true, riverRed);
-
-    riversMerged = false;
-    riverFlowAccum = 0.0f;
-    spellState = GATE_CLOSED;
-    spellTimer = 0.0f;
-
-    // The robot wants the equal-flow mix of both sources (same math as
-    // PropagateRiverColors: flow-weighted average, both flows are 1.0)
-    robotWantedColor = (Color){
-        (unsigned char)((riverBlue.r + riverRed.r)/2),
-        (unsigned char)((riverBlue.g + riverRed.g)/2),
-        (unsigned char)((riverBlue.b + riverRed.b)/2),
-        255
+static Vector2 DoorCenter(const Door *door)
+{
+    return (Vector2){
+        door->rect.x + door->rect.width*0.5f,
+        door->rect.y + door->rect.height*0.5f
     };
-    robotHappy = false;
+}
 
-    PropagateRiverColors();
-
-    // Subdivide each segment into samples, filled with the steady-state color
+static void InitializeRiverSamples(void)
+{
     for (int i = 0; i < riverCount; i++)
     {
         int d = rivers[i].downstream;
@@ -560,19 +657,184 @@ static void BuildRivers(void)
             float dy = rivers[d].position.y - rivers[i].position.y;
             int count = (int)(sqrtf(dx*dx + dy*dy)/RIVER_SAMPLE_SPACING) + 1;
             rivers[i].sampleCount = (count > MAX_SEGMENT_SAMPLES)? MAX_SEGMENT_SAMPLES : count;
-            for (int k = 0; k < rivers[i].sampleCount; k++) rivers[i].samples[k] = rivers[i].color;
+            Color c = (rivers[i].flow > 0.0f)? rivers[i].color : BLANK;
+            for (int k = 0; k < rivers[i].sampleCount; k++) rivers[i].samples[k] = c;
         }
         else rivers[i].sampleCount = 0;
     }
+}
+
+static bool SideRiverIsOpen(int sideRiverIndex)
+{
+    for (int i = 0; i < doorCount; i++)
+    {
+        if ((doors[i].sideRiverIndex == sideRiverIndex) && !doors[i].open) return false;
+    }
+    return true;
+}
+
+static void LoadLevel(int levelIndex)
+{
+    if (levelIndex < 0) levelIndex = 0;
+    if (levelIndex >= levelCount) levelIndex = levelCount - 1;
+    currentLevelIndex = levelIndex;
+
+    const LevelDef *level = &levelDefs[currentLevelIndex];
+    doorCount = (level->doorCount > MAX_LEVEL_DOORS)? MAX_LEVEL_DOORS : level->doorCount;
+    for (int i = 0; i < doorCount; i++)
+    {
+        int sideIndex = level->doors[i].sideRiverIndex;
+        // The gate sits at the side river's MOUTH: where its centerline meets the
+        // main channel's bank. It blocks water from entering the junction; the
+        // side channel itself stays full of (dammed) water behind it
+        const SideRiverDef *def = &level->sideRivers[sideIndex];
+        float mainX = (float)screenWidth/2;
+        float dir = (def->source.x < mainX)? -1.0f : 1.0f;
+        Vector2 block = { mainX + dir*channelHalfWidth, def->junctionY };
+        float w = GATE_W*RIVER_PIXEL;
+        float h = GATE_H*RIVER_PIXEL;
+        doors[i] = (Door){
+            .rect = { block.x - w*0.5f, block.y - h*0.5f, w, h },
+            .sideRiverIndex = sideIndex,
+            .open = level->doors[i].open
+        };
+    }
+
+    buttonCount = (level->buttonCount > MAX_LEVEL_BUTTONS)? MAX_LEVEL_BUTTONS : level->buttonCount;
+    for (int i = 0; i < buttonCount; i++) buttons[i] = level->buttons[i];
+
+    mainPlayerPosition = level->playerSpawn;
+    BuildRivers(level);
+}
+
+// Build the rivers from declarative level data. Nodes are created first, then
+// downstream links and renderer junction metadata are filled in.
+static void BuildRivers(const LevelDef *level)
+{
+    riverCount = 0;
+    junctionCount = 0;
+
+    // Main river (blue): straight vertical channel flowing UPWARD (bottom to top),
+    // always centered on the screen
+    float mainX = (float)screenWidth/2;
+    float junctionYs[MAX_JUNCTIONS] = { 0 };
+    int uniqueJunctionCount = 0;
+    for (int i = 0; i < level->sideRiverCount; i++)
+    {
+        if (fabsf(level->sideRivers[i].source.y - level->sideRivers[i].junctionY) > 0.5f)
+        {
+            LOG("Side river %d is not horizontal; source.y should match junctionY\n", i);
+        }
+        if (fabsf(level->sideRivers[i].source.x - mainX) <= channelHalfWidth)
+        {
+            LOG("Side river %d source starts inside the main channel\n", i);
+        }
+        if (FindJunctionY(junctionYs, uniqueJunctionCount, level->sideRivers[i].junctionY) >= 0) continue;
+        if (uniqueJunctionCount >= MAX_JUNCTIONS)
+        {
+            LOG("Too many river junctions; increase MAX_JUNCTIONS\n");
+            break;
+        }
+        junctionYs[uniqueJunctionCount++] = level->sideRivers[i].junctionY;
+    }
+    SortJunctionYs(junctionYs, uniqueJunctionCount);
+    for (int i = 1; i < uniqueJunctionCount; i++)
+    {
+        if (junctionYs[i] - junctionYs[i - 1] < channelHalfWidth)
+        {
+            LOG("River junctions %.1f and %.1f are close enough for arcs to overlap\n",
+                junctionYs[i - 1], junctionYs[i]);
+        }
+    }
+
+    int mouth = AddRiverNode((Vector2){ mainX, mainRiverMouthY }, true, false, BLANK, -1);
+    riverMouthIndex = mouth;
+    int junctionNodes[MAX_JUNCTIONS] = { 0 };
+    for (int i = 0; i < uniqueJunctionCount; i++)
+    {
+        junctionNodes[i] = AddRiverNode((Vector2){ mainX, junctionYs[i] }, true, false, BLANK, -1);
+    }
+    int mainSource = AddRiverNode((Vector2){ mainX, (float)screenHeight }, true, true, riverOrange, -1);
+
+    for (int i = 0; i < uniqueJunctionCount; i++)
+    {
+        rivers[junctionNodes[i]].downstream = (i == 0)? mouth : junctionNodes[i - 1];
+    }
+    if (uniqueJunctionCount > 0) rivers[mainSource].downstream = junctionNodes[uniqueJunctionCount - 1];
+    else rivers[mainSource].downstream = mouth;
+
+    // Side rivers enter their matching main-river junction.
+    for (int i = 0; i < level->sideRiverCount; i++)
+    {
+        int sortedJunction = FindJunctionY(junctionYs, uniqueJunctionCount, level->sideRivers[i].junctionY);
+        if (sortedJunction < 0) continue;
+
+        int junctionNode = junctionNodes[sortedJunction];
+        int sideSource = AddRiverNode(level->sideRivers[i].source, false, true, level->sideRivers[i].sourceColor, i);
+        rivers[sideSource].downstream = junctionNode;
+
+        if (junctionCount < MAX_JUNCTIONS)
+        {
+            int lowerMainSegment = (sortedJunction + 1 < uniqueJunctionCount)?
+                junctionNodes[sortedJunction + 1] : mainSource;
+            junctions[junctionCount++] = (JunctionRender){
+                .position = rivers[junctionNode].position,
+                .sideDir = (level->sideRivers[i].source.x < mainX)? -1.0f : 1.0f,
+                .upperMainSegment = junctionNode,
+                .lowerMainSegment = lowerMainSegment,
+                .sideSegment = sideSource
+            };
+        }
+    }
+
+    riversMerged = false;
+    riverFlowAccum = 0.0f;
+    spellState = GATE_CLOSED;
+    spellTimer = 0.0f;
+    robotWantedColor = level->robotWantedColor;
+    robotHappy = false;
+
+    PropagateRiverColors();
+    InitializeRiverSamples();
+}
+
+static bool SameColor(Color a, Color b)
+{
+    return (a.r == b.r) && (a.g == b.g) && (a.b == b.b);
+}
+
+// Mix two water colors: primary pairs produce their defined secondary,
+// anything else falls back to an RGB average
+static Color MixWaterColors(Color a, Color b)
+{
+    if (SameColor(a, b)) return a;
+
+    bool hasRed = SameColor(a, riverRed) || SameColor(b, riverRed);
+    bool hasBlue = SameColor(a, riverBlue) || SameColor(b, riverBlue);
+    bool hasYellow = SameColor(a, riverYellow) || SameColor(b, riverYellow);
+    bool hasPurple = SameColor(a, riverPurple) || SameColor(b, riverPurple);
+    bool hasOrange = SameColor(a, riverOrange) || SameColor(b, riverOrange);
+    bool hasGreen = SameColor(a, riverGreen) || SameColor(b, riverGreen);
+
+    if (hasRed && hasBlue) return riverPurple;
+    if (hasRed && hasYellow) return riverOrange;
+    if (hasBlue && hasYellow) return riverGreen;
+    if (hasRed && hasOrange) return riverVermilion;
+    if (hasYellow && hasOrange) return riverAmber;
+    if (hasYellow && hasGreen) return riverChartreuse;
+    if (hasBlue && hasGreen) return riverTeal;
+    if (hasBlue && hasPurple) return riverViolet;
+    if (hasRed && hasPurple) return riverMagenta;
+
+    return (Color){ (a.r + b.r)/2, (a.g + b.g)/2, (a.b + b.b)/2, 255 };
 }
 
 // Recompute steady-state color and flow of every node, processing in topological
 // order (each node only after all its upstream inputs are resolved)
 static void PropagateRiverColors(void)
 {
-    float r[MAX_RIVER_NODES] = { 0 };       // Accumulated inflow color, flow-weighted
-    float g[MAX_RIVER_NODES] = { 0 };
-    float b[MAX_RIVER_NODES] = { 0 };
+    Color mixColor[MAX_RIVER_NODES] = { 0 };    // Folded mix of all inflow colors
+    bool hasColor[MAX_RIVER_NODES] = { 0 };
     float inFlow[MAX_RIVER_NODES] = { 0 };
     Color mainColor[MAX_RIVER_NODES] = { 0 };   // Color arriving from the main river, if any
     float mainFlow[MAX_RIVER_NODES] = { 0 };
@@ -600,19 +862,14 @@ static void PropagateRiverColors(void)
         if (rivers[i].isSource)
         {
             rivers[i].color = rivers[i].sourceColor;
-            rivers[i].flow = 1.0f;
+            rivers[i].flow = 1.0f;  // Closed doors block at the junction, not at the source
         }
         else if (inFlow[i] > 0.0f)
         {
             if (riversMerged || !hasMain[i])
             {
-                // Mix everything that flowed in, weighted by flow volume
-                rivers[i].color = (Color){
-                    (unsigned char)(r[i]/inFlow[i]),
-                    (unsigned char)(g[i]/inFlow[i]),
-                    (unsigned char)(b[i]/inFlow[i]),
-                    255
-                };
+                // Mix everything that flowed in (primary pairs -> secondary)
+                rivers[i].color = mixColor[i];
                 rivers[i].flow = inFlow[i];
             }
             else
@@ -627,10 +884,19 @@ static void PropagateRiverColors(void)
         int d = rivers[i].downstream;
         if (d >= 0)
         {
-            r[d] += rivers[i].color.r*rivers[i].flow;
-            g[d] += rivers[i].color.g*rivers[i].flow;
-            b[d] += rivers[i].color.b*rivers[i].flow;
-            inFlow[d] += rivers[i].flow;
+            // A closed door dams the side river at its mouth: the channel stays
+            // full of water, but contributes nothing to the junction
+            bool dammed = (rivers[i].sideRiverIndex >= 0) && !SideRiverIsOpen(rivers[i].sideRiverIndex);
+
+            if (!dammed)
+            {
+                if (rivers[i].flow > 0.0f)
+                {
+                    mixColor[d] = hasColor[d]? MixWaterColors(mixColor[d], rivers[i].color) : rivers[i].color;
+                    hasColor[d] = true;
+                }
+                inFlow[d] += rivers[i].flow;
+            }
             if (rivers[i].isMain)
             {
                 mainColor[d] = rivers[i].color;
@@ -649,7 +915,8 @@ static Color RiverNodeOutputColor(int i)
 {
     if (rivers[i].isSource) return rivers[i].sourceColor;
 
-    float r = 0.0f, g = 0.0f, b = 0.0f, f = 0.0f;
+    Color mixed = { 0 };
+    bool hasColor = false;
     Color mainCol = rivers[i].color;
     bool hasMain = false;
 
@@ -657,11 +924,13 @@ static Color RiverNodeOutputColor(int i)
     {
         if ((rivers[j].downstream == i) && (rivers[j].flow > 0.0f) && (rivers[j].sampleCount > 0))
         {
+            // Dammed side rivers contribute nothing until their door opens
+            if ((rivers[j].sideRiverIndex >= 0) && !SideRiverIsOpen(rivers[j].sideRiverIndex)) continue;
+
             Color c = rivers[j].samples[rivers[j].sampleCount - 1];     // Water arriving now
-            r += c.r*rivers[j].flow;
-            g += c.g*rivers[j].flow;
-            b += c.b*rivers[j].flow;
-            f += rivers[j].flow;
+            if (c.a == 0) continue;    // Channel is still refilling: nothing has arrived yet
+            mixed = hasColor? MixWaterColors(mixed, c) : c;
+            hasColor = true;
             if (rivers[j].isMain)
             {
                 mainCol = c;
@@ -670,9 +939,9 @@ static Color RiverNodeOutputColor(int i)
         }
     }
 
-    if (f <= 0.0f) return rivers[i].color;
+    if (!hasColor) return rivers[i].color;
     if (!riversMerged && hasMain) return mainCol;   // Side inflows don't tint the main river yet
-    return (Color){ (unsigned char)(r/f), (unsigned char)(g/f), (unsigned char)(b/f), 255 };
+    return mixed;
 }
 
 // True if every RGB channel of a is within tol of b (mixing rounds channels,
@@ -695,6 +964,10 @@ static void UpdateRobotMood(void)
 static void StartSpell(void)
 {
     if (spellState != GATE_CLOSED) return;
+    if (doorCount <= 0) return;
+    if (doors[0].open) return;
+
+    Vector2 gatePosition = DoorCenter(&doors[0]);
     if (Vector2Distance(mainPlayerPosition, gatePosition) > gateCastRadius) return;
 
     spellState = SPELL_FLYING;
@@ -705,6 +978,9 @@ static void StartSpell(void)
 // the rivers actually merge (this is where the old R-key merge code moved to)
 static void UpdateSpell(float dt)
 {
+    if (doorCount <= 0) return;
+    Vector2 gatePosition = DoorCenter(&doors[0]);
+
     if (spellState == SPELL_FLYING)
     {
         Vector2 toGate = Vector2Subtract(gatePosition, spellPos);
@@ -724,6 +1000,7 @@ static void UpdateSpell(float dt)
         if (spellTimer >= transformTime)
         {
             spellState = GATE_FROG;
+            doors[0].open = true;
             riversMerged = true;
             PropagateRiverColors();
         }
@@ -837,22 +1114,80 @@ static void RenderRiverPixels(float time)
 
                 if (d <= channelHalfWidth)
                 {
-                    // Water: color comes from the advected samples along the segment
-                    int count = seg->sampleCount;
-                    Color w = seg->color;
+                    // Decide whose water this pixel shows. Inside the main channel
+                    // main water always wins: side rivers END at the main channel's
+                    // bank. At the junction the hand-off
+                    // between upstream and merged water follows an arc, like the
+                    // entering water being swept upward by the main flow
+                    int waterSeg = bestSeg;
+                    float waterT = bestT;
+                    float mainX = (float)screenWidth/2;
+
+                    if ((fabsf(p.x - mainX) <= channelHalfWidth) && (junctionCount > 0))
+                    {
+                        int nearestJunction = 0;
+                        float nearest = fabsf(p.y - junctions[0].position.y);
+                        for (int j = 1; j < junctionCount; j++)
+                        {
+                            float dj = fabsf(p.y - junctions[j].position.y);
+                            if (dj < nearest)
+                            {
+                                nearest = dj;
+                                nearestJunction = j;
+                            }
+                        }
+
+                        JunctionRender *junction = &junctions[nearestJunction];
+
+                        // Build a curved boundary line, a quarter-circle arc
+                        float sideBankX = junction->position.x + junction->sideDir*channelHalfWidth;
+                        float ax = (p.x - sideBankX)*-junction->sideDir; // Distance into the channel from the side mouth
+                        float arcR = 2.0f*channelHalfWidth;
+                        float boundaryY = junction->position.y + channelHalfWidth - arcR;
+                        if ((ax >= 0.0f) && (ax < arcR)) boundaryY += sqrtf(arcR*arcR - ax*ax);
+
+                        // Ordered-dither blend across a band instead of a hard edge
+                        float blend = (boundaryY - p.y)/24.0f + 0.5f;   // 1 = merged side, 0 = upstream
+                        waterSeg = (blend > bayer4[py & 3][px & 3])? junction->upperMainSegment : junction->lowerMainSegment;
+                        SegmentDistance(p, rivers[waterSeg].position,
+                                        rivers[rivers[waterSeg].downstream].position, &waterT);
+                    }
+
+                    RiverNode *wseg = &rivers[waterSeg];
+                    Vector2 wa = wseg->position;
+                    Vector2 wb = rivers[wseg->downstream].position;
+                    float wLen = sqrtf((wb.x - wa.x)*(wb.x - wa.x) + (wb.y - wa.y)*(wb.y - wa.y));
+                    float wAlong = waterT*wLen;
+
+                    // Water color comes from the advected samples along the segment
+                    int count = wseg->sampleCount;
+                    Color w = wseg->color;
                     if (count > 1)
                     {
-                        float kf = bestT*(count - 1) + (((px + py) & 1)? 0.5f : 0.0f);  // Dithered
+                        // Ordered dither spreads each sample boundary over ~2 samples,
+                        // so the traveling color front has a soft blended edge
+                        float kf = waterT*(count - 1) + bayer4[py & 3][px & 3]*2.0f - 0.5f;
                         int k = (int)kf;
+                        if (k < 0) k = 0;
                         if (k > count - 1) k = count - 1;
-                        w = seg->samples[k];
+                        w = wseg->samples[k];
                     }
-                    // Flow streaks moving downstream
-                    float sp = fmodf(along - time*RIVER_FLOW_SPEED, 90.0f);
-                    if (sp < 0.0f) sp += 90.0f;
-                    if ((sp < 15.0f) && (d < channelHalfWidth - 16.0f) && (((px*7 + py*3)%5) < 3)) w = WaterLight(w);
-                    if (d > channelHalfWidth - 9.0f) w = WaterDark(w);  // Waterline edge
-                    out = w;
+
+                    if ((wseg->flow <= 0.0f) || (w.a == 0))
+                    {
+                        // Dry bed: no flow, or the water refilling this channel
+                        // hasn't reached this stretch yet (alpha 0 samples)
+                        out = (d > channelHalfWidth - 9.0f)? metalRamp[1] : metalRamp[2];
+                    }
+                    else
+                    {
+                        // Flow streaks moving downstream
+                        float sp = fmodf(wAlong - time*RIVER_FLOW_SPEED, 90.0f);
+                        if (sp < 0.0f) sp += 90.0f;
+                        if ((sp < 15.0f) && (d < channelHalfWidth - 16.0f) && (((px*7 + py*3)%5) < 3)) w = WaterLight(w);
+                        if (d > channelHalfWidth - 9.0f) w = WaterDark(w);  // Waterline edge
+                        out = w;
+                    }
                 }
                 else if (d <= channelHalfWidth + slopeWidth)
                 {
@@ -972,7 +1307,10 @@ static void DrawRobot(void)
 // Gate / spark / poof / frog, drawn on the same low-res pixel grid as the scene
 static void DrawSpellScene(void)
 {
+    if (doorCount <= 0) return;
+
     float t = (float)GetTime();
+    Vector2 gatePosition = DoorCenter(&doors[0]);
 
     if (spellState == GATE_CLOSED || spellState == SPELL_FLYING)
     {
