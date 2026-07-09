@@ -111,7 +111,7 @@ static const float buttonRadius = 12.0f;
 // Radius of the player.
 static const float playerRadius = 10.0f;
 
-static Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight/2 };
+static Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 };
 
 // Three walkable rooms — left and right are narrower and shorter than mid.
 static const Rectangle midRect   = {240,  60, 240, 600};
