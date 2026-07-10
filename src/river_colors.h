@@ -13,15 +13,15 @@
 #define RIVER_BLUE       { 47, 111, 208, 255 }
 #define RIVER_RED        { 192, 58, 43, 255 }
 #define RIVER_YELLOW     { 232, 180, 40, 255 }
-#define RIVER_PURPLE     { 136, 60, 184, 255 }
-#define RIVER_ORANGE     { 230, 126, 34, 255 }
-#define RIVER_GREEN      { 62, 168, 82, 255 }
-#define RIVER_VERMILION  { 0xD3, 0x5C, 0x26, 0xFF }
-#define RIVER_AMBER      { 0xE7, 0x99, 0x25, 0xFF }
-#define RIVER_CHARTREUSE { 0x93, 0xAE, 0x3D, 0xFF }
-#define RIVER_TEAL       { 0x36, 0x8C, 0x91, 0xFF }
-#define RIVER_VIOLET     { 0x5C, 0x56, 0xC4, 0xFF }
-#define RIVER_MAGENTA    { 0xA4, 0x3B, 0x72, 0xFF }
+#define RIVER_PURPLE     { 136, 60, 184, 255 } // Blue + Red
+#define RIVER_ORANGE     { 230, 126, 34, 255 } // Red + Yellow
+#define RIVER_GREEN      { 62, 168, 82, 255 } // Yellow + Blue
+#define RIVER_VERMILION  { 0xD3, 0x5C, 0x26, 0xFF } // Red + Orange
+#define RIVER_AMBER      { 0xE7, 0x99, 0x25, 0xFF } // Yellow + Orange
+#define RIVER_CHARTREUSE { 0x93, 0xAE, 0x3D, 0xFF } // Yellow + Green
+#define RIVER_TEAL       { 0x36, 0x8C, 0x91, 0xFF } // Blue + Green
+#define RIVER_VIOLET     { 0x5C, 0x56, 0xC4, 0xFF } // Blue + Purple
+#define RIVER_MAGENTA    { 0xA4, 0x3B, 0x72, 0xFF } // Red + Purple
 
 static const Color riverBlue = RIVER_BLUE;
 static const Color riverRed = RIVER_RED;

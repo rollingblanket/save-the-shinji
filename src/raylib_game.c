@@ -542,6 +542,7 @@ static Music themeMusic = { 0 };        // Looping title screen music, streamed
 static Music backgroundMusic = { 0 };   // Looping level music, streamed
 static Sound goalSound = { 0 };         // Level complete jingle
 static Sound castSound = { 0 };         // Spell cast (R)
+static Sound wandSound = { 0 };         // Wand enchantment (T)
 
 // Resolve a file in assets/ whether the game runs from the repo root or src/
 static const char *AssetPath(const char *fileName)
@@ -571,6 +572,7 @@ int main(void)
     backgroundMusic = LoadMusicStream(AssetPath("background.mp3"));
     goalSound = LoadSound(AssetPath("goal.mp3"));
     castSound = LoadSound(AssetPath("hex-casting.mp3"));
+    wandSound = LoadSound(AssetPath("wandsfx.mp3"));
     themeMusic.looping = true;
     backgroundMusic.looping = true;
     SetMusicVolume(themeMusic, 0.5f);
@@ -578,7 +580,7 @@ int main(void)
     PlayMusicStream(themeMusic);            // Title screen music; gameplay music starts on ENTER
 
     // TODO: Load resources / Initialize variables at this point
-    LoadLevel(0);
+    LoadLevel(3);
 
     // Low-res scene texture, upscaled with point filtering for crisp pixels
     Image riverImage = GenImageColor(RIVER_RES, RIVER_RES, BLACK);
@@ -613,6 +615,7 @@ int main(void)
     UnloadMusicStream(backgroundMusic);
     UnloadSound(goalSound);
     UnloadSound(castSound);
+    UnloadSound(wandSound);
     CloseAudioDevice();
 
     // TODO: Unload all loaded resources at this point
@@ -650,7 +653,8 @@ void UpdateDrawFrame(void)
     // flying would re-dip the wand in every river crossed, silently replacing
     // the pigment being carried
     if (IsKeyPressed(KEY_R)) StartSpell();
-    if (IsKeyPressed(KEY_T)) DipWand();
+    // Enchanting wand is only available after level 2
+    if (currentLevelIndex >= 2 && IsKeyPressed(KEY_T)) DipWand();
 
     // SPACE: advancing after a win is a simple press, but restarting mid-level
     // must be HELD for a moment so a stray tap doesn't wipe progress
@@ -1168,7 +1172,10 @@ static void DipWand(void)
     if (w.a != 0)
     {
         // The crystal flashes when it picks up a NEW pigment
-        if (!wandCharged || !SameColor(w, wandColor)) wandFlashTimer = wandFlashTime;
+        if (!wandCharged || !SameColor(w, wandColor)) {
+            wandFlashTimer = wandFlashTime;
+            PlaySound(wandSound);
+        }
         wandColor = w;
         wandCharged = true;
     }
