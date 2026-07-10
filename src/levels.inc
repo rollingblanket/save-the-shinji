@@ -4,7 +4,7 @@
 #include "river_colors.h"
 
 static const SideRiverDef level0SideRivers[] = {
-    { .source = { 0, 375 }, .sourceColor = riverRed, .junctionY = 375.0f }
+    { .source = { 0, 375 }, .sourceColor = RIVER_RED, .junctionY = 375.0f }
 };
 
 static const DoorDef level0Doors[] = {
@@ -12,8 +12,8 @@ static const DoorDef level0Doors[] = {
 };
 
 static const SideRiverDef level1SideRivers[] = {
-    { .source = { 0, 375 }, .sourceColor = riverYellow, .junctionY = 375.0f },
-    { .source = { 800, 375 }, .sourceColor = riverRed, .junctionY = 375.0f }
+    { .source = { 0, 375 }, .sourceColor = RIVER_YELLOW, .junctionY = 375.0f },
+    { .source = { 800, 375 }, .sourceColor = RIVER_RED, .junctionY = 375.0f }
 
 };
 
