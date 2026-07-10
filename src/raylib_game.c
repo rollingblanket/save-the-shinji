@@ -524,6 +524,7 @@ static void UpdateSpell(float dt);      // Spell state machine: fly -> poof -> f
 static void DrawSpellScene(void);       // Draw gate / spark / poof / frog by state
 static bool NodeDammed(int i);          // True if a closed door blocks node i's outflow
 static Color WaterColorAt(Vector2 p);   // Water color under a point, BLANK if not over water
+static bool WandMatchesDoor(const Door *door);  // Does the wand pigment satisfy the door's color lock?
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
 // Draw an ASCII sprite snapped to the low-res pixel grid (shadow = flat dark silhouette)
@@ -644,7 +645,9 @@ void UpdateDrawFrame(void)
     if (IsKeyDown(KEY_A)) dx -= 2.0f;
     if (IsKeyDown(KEY_D)) dx += 2.0f;
     // R casts the spell (only works near the gate)
-    if (IsKeyDown(KEY_R)) StartSpell();
+    // Pressed, not held: holding R while flying would re-dip the wand in every
+    // river crossed, silently replacing the pigment being carried
+    if (IsKeyPressed(KEY_R)) StartSpell();
 
     // SPACE: advancing after a win is a simple press, but restarting mid-level
     // must be HELD for a moment so a stray tap doesn't wipe progress
@@ -1184,8 +1187,7 @@ static void StartSpell(void)
     }
 
     Door *door = &doors[targetDoor];
-    if ((door->requiresWandColor.a != 0) &&
-        (!wandCharged || !SameColor(wandColor, door->requiresWandColor)))
+    if (!WandMatchesDoor(door))
     {
         // Locked: the spell fizzles against the gate's rune
         fizzleTimer = fizzleTime;
@@ -1333,6 +1335,18 @@ static Color WaterLight(Color c)
 static Color WaterDark(Color c)
 {
     return (Color){ c.r*72/100, c.g*72/100, c.b*72/100, 255 };
+}
+
+// Does the wand pigment satisfy a door's color lock? Colorless doors (alpha 0)
+// accept any spell. The comparison is tolerant rather than exact: mixing
+// rounds color channels, and the lock should also accept the lightened
+// display shade of its color in case a dip ever captures that variant
+static bool WandMatchesDoor(const Door *door)
+{
+    if (door->requiresWandColor.a == 0) return true;
+    if (!wandCharged) return false;
+    return ColorNear(wandColor, door->requiresWandColor, 12) ||
+           ColorNear(wandColor, WaterLight(door->requiresWandColor), 12);
 }
 
 // Fill the low-res buffer: for every pixel, distance to the nearest river
@@ -1766,8 +1780,7 @@ static void DrawSpellScene(void)
             if ((spellState == GATE_CLOSED) &&
                 (Vector2Distance(mainPlayerPosition, doorPosition) <= gateCastRadius))
             {
-                bool locked = (doors[i].requiresWandColor.a != 0);
-                bool wandFits = !locked || (wandCharged && SameColor(wandColor, doors[i].requiresWandColor));
+                bool wandFits = WandMatchesDoor(&doors[i]);
                 DrawCircleLines((int)doorPosition.x, (int)doorPosition.y,
                                 gateCastRadius + sinf(t*6.0f)*3.0f,
                                 wandFits? YELLOW : (Color){ 130, 130, 140, 255 });
