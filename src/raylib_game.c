@@ -213,6 +213,8 @@ static const float bayer4[4][4] = {
 // '.' = transparent, letters are palette keys mapped by SpriteColor())
 //----------------------------------------------------------------------------------
 #define WITCH_SIZE 16
+// She holds a wand in her outer hand: 'B' stick angled up-right, 'X' crystal
+// tip. The tip renders in the dipped pigment color once the wand is charged
 static const char *witchSprite[WITCH_SIZE] = {
     "........T.......",
     ".......TTT......",
@@ -220,11 +222,11 @@ static const char *witchSprite[WITCH_SIZE] = {
     "......TTTTT.....",
     "......AAAAA.....",
     "...HHHHHHHHHH...",
-    ".....FFFFFF.....",
-    ".....FEFFEF.....",
-    ".....FFFFFF.....",
-    ".....RRRRRR.....",
-    "....RRRRRRRR....",
+    ".....FFFFFF....X",
+    ".....FEFFEF....X",
+    ".....FFFFFF....B",
+    ".....RRRRRR...B.",
+    "....RRRRRRRR.B..",
     "...SRRRRRRRRS...",
     "YYBBBBBBBBBBBB..",
     "YYY..RRRR.......",
@@ -433,6 +435,8 @@ static int spellTargetDoor = -1;            // Door the current spell is aimed a
 // gates only yield to a spell cast with the matching wand color
 static Color wandColor = { 0 };
 static bool wandCharged = false;
+static float wandFlashTimer = 0.0f;         // Crystal flash right after a dip
+static const float wandFlashTime = 0.3f;
 static float fizzleTimer = 0.0f;            // Gray poof when a locked gate rejects the spell
 static Vector2 fizzlePos = { 0 };
 static const float fizzleTime = 0.35f;
@@ -729,14 +733,6 @@ void UpdateDrawFrame(void)
             wandCharged? wandColor : LIGHTGRAY
         );
 
-        // Wand charge: a glowing bead above the witch's hat in the dipped color
-        if (wandCharged)
-        {
-            int bx = (int)roundf(witchHover.x/RIVER_PIXEL);
-            int by = (int)roundf(witchHover.y/RIVER_PIXEL) - 10;
-            DrawRectangle((int)(bx*RIVER_PIXEL), (int)(by*RIVER_PIXEL),
-                          (int)RIVER_PIXEL, (int)RIVER_PIXEL, wandColor);
-        }
 
 
         // Hold-to-restart progress spinner, center screen
@@ -979,6 +975,7 @@ static void BuildRivers(const LevelDef *level)
     fizzleTimer = 0.0f;
     wandCharged = false;
     wandColor = (Color){ 0 };
+    wandFlashTimer = 0.0f;
     robotWantedColor = level->robotWantedColor;
     robotHappy = false;
 
@@ -1173,10 +1170,13 @@ static void StartSpell(void)
 
     if (targetDoor < 0)
     {
-        // No gate around: dip the wand, taking the color of the water below
+        // No gate around: dip the wand, taking the color of the water below.
+        // The crystal flashes when it picks up a NEW pigment (not on re-dips,
+        // so holding R over the same water flashes once)
         Color w = WaterColorAt(mainPlayerPosition);
         if (w.a != 0)
         {
+            if (!wandCharged || !SameColor(w, wandColor)) wandFlashTimer = wandFlashTime;
             wandColor = w;
             wandCharged = true;
         }
@@ -1204,6 +1204,7 @@ static void StartSpell(void)
 static void UpdateSpell(float dt)
 {
     if (fizzleTimer > 0.0f) fizzleTimer -= dt;
+    if (wandFlashTimer > 0.0f) wandFlashTimer -= dt;
 
     if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount)) return;
     Vector2 gatePosition = DoorCenter(&doors[spellTargetDoor]);
@@ -1510,6 +1511,12 @@ static Color SpriteColor(char c)
         case 'R': return (Color){ 84, 48, 128, 255 };   // Robe
         case 'B': return (Color){ 138, 90, 43, 255 };   // Broom stick
         case 'Y': return (Color){ 201, 151, 77, 255 };  // Bristles
+        case 'X':   // Wand crystal tip: shows the dipped pigment when charged.
+                    // Drawn one shade LIGHTER than the river water so it stays
+                    // visible while flying over water of the same color
+            if (wandFlashTimer > 0.0f) return WaterLight(WaterLight(wandCharged? wandColor : (Color){ 208, 214, 224, 255 }));
+            if (wandCharged) return WaterLight(wandColor);
+            return (Color){ 208, 214, 224, 255 };       // Inert pale crystal
         case 'K': return (Color){ 42, 32, 48, 255 };    // Near-black (boots, robot face)
         case 'D': return (Color){ 57, 64, 74, 255 };    // Dark metal outline
         case 'M': return (Color){ 152, 161, 173, 255 }; // Metal
