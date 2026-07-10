@@ -532,6 +532,7 @@ static void UpdateDrawTitle(void);                      // Title screen: story +
 //----------------------------------------------------------------------------------
 // Audio
 //----------------------------------------------------------------------------------
+static Music themeMusic = { 0 };        // Looping title screen music, streamed
 static Music backgroundMusic = { 0 };   // Looping level music, streamed
 static Sound goalSound = { 0 };         // Level complete jingle
 static Sound castSound = { 0 };         // Spell cast (R)
@@ -560,12 +561,15 @@ int main(void)
     InitWindow(screenWidth, screenHeight, "raylib gamejam template");
 
     InitAudioDevice();
+    themeMusic = LoadMusicStream(AssetPath("theme.mp3"));
     backgroundMusic = LoadMusicStream(AssetPath("background.mp3"));
     goalSound = LoadSound(AssetPath("goal.mp3"));
     castSound = LoadSound(AssetPath("hex-casting.mp3"));
+    themeMusic.looping = true;
     backgroundMusic.looping = true;
+    SetMusicVolume(themeMusic, 0.5f);
     SetMusicVolume(backgroundMusic, 0.5f);  // Keep sfx audible over the music
-    PlayMusicStream(backgroundMusic);
+    PlayMusicStream(themeMusic);            // Title screen music; gameplay music starts on ENTER
 
     // TODO: Load resources / Initialize variables at this point
     LoadLevel(0);
@@ -599,6 +603,7 @@ int main(void)
     UnloadTexture(riverTexture);
     UnloadRenderTexture(target);
 
+    UnloadMusicStream(themeMusic);
     UnloadMusicStream(backgroundMusic);
     UnloadSound(goalSound);
     UnloadSound(castSound);
@@ -620,6 +625,7 @@ void UpdateDrawFrame(void)
 {
     // Update
     //----------------------------------------------------------------------------------
+    UpdateMusicStream(themeMusic);
     UpdateMusicStream(backgroundMusic);
 
     if (currentScreen != SCREEN_GAMEPLAY)
@@ -1619,6 +1625,8 @@ static void UpdateDrawTitle(void)
     if (IsKeyPressed(KEY_ENTER) && storyDone)
     {
         currentScreen = SCREEN_GAMEPLAY;
+        StopMusicStream(themeMusic);
+        PlayMusicStream(backgroundMusic);
         return;
     }
     if ((GetKeyPressed() != 0) && !storyDone) storyCharsShown = (float)totalChars;
