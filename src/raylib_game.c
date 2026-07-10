@@ -445,6 +445,21 @@ static void DrawWitch(Vector2 worldPos, bool shadow);  // Draw the player sprite
 static void DrawRobot(void);                            // Robot head with idle bob + antenna blink
 static void DrawRestartSpinner(float progress);         // Hold-to-restart progress ring
 
+//----------------------------------------------------------------------------------
+// Audio
+//----------------------------------------------------------------------------------
+static Music backgroundMusic = { 0 };   // Looping level music, streamed
+static Sound goalSound = { 0 };         // Level complete jingle
+static Sound castSound = { 0 };         // Spell cast (R)
+
+// Resolve a file in assets/ whether the game runs from the repo root or src/
+static const char *AssetPath(const char *fileName)
+{
+    static char path[256];
+    snprintf(path, sizeof(path), "%s/%s", DirectoryExists("assets")? "assets" : "../assets", fileName);
+    return path;
+}
+
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
@@ -459,7 +474,15 @@ int main(void)
     // Initialization
     //--------------------------------------------------------------------------------------
     InitWindow(screenWidth, screenHeight, "raylib gamejam template");
-    
+
+    InitAudioDevice();
+    backgroundMusic = LoadMusicStream(AssetPath("background.mp3"));
+    goalSound = LoadSound(AssetPath("goal.mp3"));
+    castSound = LoadSound(AssetPath("hex-casting.mp3"));
+    backgroundMusic.looping = true;
+    SetMusicVolume(backgroundMusic, 0.5f);  // Keep sfx audible over the music
+    PlayMusicStream(backgroundMusic);
+
     // TODO: Load resources / Initialize variables at this point
     LoadLevel(0);
 
@@ -491,7 +514,12 @@ int main(void)
     //--------------------------------------------------------------------------------------
     UnloadTexture(riverTexture);
     UnloadRenderTexture(target);
-    
+
+    UnloadMusicStream(backgroundMusic);
+    UnloadSound(goalSound);
+    UnloadSound(castSound);
+    CloseAudioDevice();
+
     // TODO: Unload all loaded resources at this point
 
     CloseWindow();        // Close window and OpenGL context
@@ -508,6 +536,8 @@ void UpdateDrawFrame(void)
 {
     // Update
     //----------------------------------------------------------------------------------
+    UpdateMusicStream(backgroundMusic);
+
     float dx = 0.0f, dy = 0.0f;
     if (IsKeyDown(KEY_W)) dy -= 2.0f;
     if (IsKeyDown(KEY_S)) dy += 2.0f;
@@ -978,7 +1008,11 @@ static bool ColorNear(Color a, Color b, int tol)
 static void UpdateRobotMood(void)
 {
     if (robotHappy || !riversMerged) return;
-    if (ColorNear(RiverNodeOutputColor(riverMouthIndex), robotWantedColor, 10)) robotHappy = true;
+    if (ColorNear(RiverNodeOutputColor(riverMouthIndex), robotWantedColor, 10))
+    {
+        robotHappy = true;
+        PlaySound(goalSound);
+    }
 }
 
 // Cast the spell at the nearest closed gate within range (one spell at a time)
@@ -1003,6 +1037,7 @@ static void StartSpell(void)
     spellTargetDoor = targetDoor;
     spellState = SPELL_FLYING;
     spellPos = mainPlayerPosition;
+    PlaySound(castSound);
 }
 
 // Advance the spell: spark flies to the gate, poofs, then the frog appears and
