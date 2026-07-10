@@ -344,6 +344,9 @@ $(PROJECT_NAME): $(OBJS)
 %.o: %.c
 	$(CC) -c $< -o $@ $(CFLAGS) $(INCLUDE_PATHS) -D$(PLATFORM)
 
+# Files textually included by raylib_game.c: editing them must trigger a rebuild
+raylib_game.o: levels.inc river_colors.h restart_spinner.inc
+
 # Clean everything
 clean:
 ifeq ($(PLATFORM),PLATFORM_DESKTOP)

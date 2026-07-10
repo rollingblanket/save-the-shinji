@@ -39,6 +39,24 @@ static const DoorDef level2Doors[] = {
     { .sideRiverIndex = 1, .distFromMouth = 170.0f, .fill = RIVER_BLUE }    // outer door, blue pool below
 };
 
+// Level 4, the alchemy lab. Two chambers chained by locks. Right-lower: the
+// familiar green chamber (yellow + blue pool). Its green unlocks the LEFT
+// chamber's outer door, letting red brew purple in a second blue pool. Dipping
+// purple (overwriting green!) opens the purple-locked inner door, pouring purple
+// into the main river: blue + purple = violet. The right chamber's unlocked
+// inner door is still the trap: spilling green downstream ruins everything
+static const SideRiverDef level3SideRivers[] = {
+    { .source = { 0, 250 }, .sourceColor = RIVER_RED, .junctionY = 250.0f },
+    { .source = { 720, 470 }, .sourceColor = RIVER_YELLOW, .junctionY = 470.0f }
+};
+
+static const DoorDef level3Doors[] = {
+    { .sideRiverIndex = 0, .requiresWandColor = RIVER_PURPLE },                                     // left inner: the finale
+    { .sideRiverIndex = 0, .distFromMouth = 200.0f, .requiresWandColor = RIVER_GREEN, .fill = RIVER_BLUE }, // left outer: purple brewery
+    { .sideRiverIndex = 1 },                                                                        // right inner: the trap
+    { .sideRiverIndex = 1, .distFromMouth = 200.0f, .fill = RIVER_BLUE }                            // right outer: green brewery
+};
+
 static const LevelDef levelDefs[] = {
     {
         .sideRivers = level0SideRivers,
@@ -69,6 +87,16 @@ static const LevelDef levelDefs[] = {
         .doorCount = 3,
         .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
         .robotWantedColor = RIVER_PURPLE
+    },
+    {
+        .sideRivers = level3SideRivers,
+        .sideRiverCount = 2,
+        .buttons = NULL,
+        .buttonCount = 0,
+        .doors = level3Doors,
+        .doorCount = 4,
+        .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
+        .robotWantedColor = RIVER_VIOLET
     }
 
 };
