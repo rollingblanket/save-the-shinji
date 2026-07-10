@@ -519,7 +519,8 @@ static void BuildRivers(const LevelDef *level); // Create the river network from
 static void PropagateRiverColors(void); // Recompute steady-state colors/flow (topological order)
 static void UpdateRiverFlow(float dt);  // Advect color samples downstream
 static void UpdateRobotMood(void);      // Latch robotHappy once the wanted color arrives at the mouth
-static void StartSpell(void);           // Cast if the witch is near the gate (R key)
+static void StartSpell(void);           // Cast if the witch is near a gate (R key)
+static void DipWand(void);              // Charge the wand with the water below (T key)
 static void UpdateSpell(float dt);      // Spell state machine: fly -> poof -> frog + merge
 static void DrawSpellScene(void);       // Draw gate / spark / poof / frog by state
 static bool NodeDammed(int i);          // True if a closed door blocks node i's outflow
@@ -645,9 +646,11 @@ void UpdateDrawFrame(void)
     if (IsKeyDown(KEY_A)) dx -= 2.0f;
     if (IsKeyDown(KEY_D)) dx += 2.0f;
     // R casts the spell (only works near the gate)
-    // Pressed, not held: holding R while flying would re-dip the wand in every
-    // river crossed, silently replacing the pigment being carried
+    // R casts at gates, T dips the wand. Pressed, not held: holding T while
+    // flying would re-dip the wand in every river crossed, silently replacing
+    // the pigment being carried
     if (IsKeyPressed(KEY_R)) StartSpell();
+    if (IsKeyPressed(KEY_T)) DipWand();
 
     // SPACE: advancing after a win is a simple press, but restarting mid-level
     // must be HELD for a moment so a stray tap doesn't wipe progress
@@ -714,7 +717,12 @@ void UpdateDrawFrame(void)
 
         if (robotHappy) DrawText("Level complete! Press SPACE to continue", 20, 690, 20, YELLOW);
         else {
-            DrawText("Cast a spell (R) next to the gate to free the river", 20, 660, 20, RAYWHITE);
+            if (currentLevelIndex >= 2) {
+                DrawText("Enchan(T) your wand with the river color", 20, 660, 20, RAYWHITE);
+            }
+            if (currentLevelIndex < 2) {
+                DrawText("Press R to hex a gate", 20, 660, 20, RAYWHITE);
+            }
             DrawText("Press and hold SPACE to restart", 20, 690, 20, RAYWHITE);
         }
 
@@ -1152,8 +1160,21 @@ static void UpdateRobotMood(void)
     }
 }
 
-// R: cast at the nearest closed gate in range (honoring its color lock); with no
-// gate in range, dip the wand into the water below the witch instead
+// T: dip the wand into the water below the witch, charging it with that
+// water's pigment. Works anywhere over water, gates nearby or not
+static void DipWand(void)
+{
+    Color w = WaterColorAt(mainPlayerPosition);
+    if (w.a != 0)
+    {
+        // The crystal flashes when it picks up a NEW pigment
+        if (!wandCharged || !SameColor(w, wandColor)) wandFlashTimer = wandFlashTime;
+        wandColor = w;
+        wandCharged = true;
+    }
+}
+
+// R: cast at the nearest closed gate in range, honoring its color lock
 static void StartSpell(void)
 {
     if (spellState != GATE_CLOSED) return;
@@ -1171,20 +1192,7 @@ static void StartSpell(void)
         }
     }
 
-    if (targetDoor < 0)
-    {
-        // No gate around: dip the wand, taking the color of the water below.
-        // The crystal flashes when it picks up a NEW pigment (not on re-dips,
-        // so holding R over the same water flashes once)
-        Color w = WaterColorAt(mainPlayerPosition);
-        if (w.a != 0)
-        {
-            if (!wandCharged || !SameColor(w, wandColor)) wandFlashTimer = wandFlashTime;
-            wandColor = w;
-            wandCharged = true;
-        }
-        return;
-    }
+    if (targetDoor < 0) return;
 
     Door *door = &doors[targetDoor];
     if (!WandMatchesDoor(door))
