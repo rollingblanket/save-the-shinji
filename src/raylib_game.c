@@ -591,7 +591,7 @@ int main(void)
     PlayMusicStream(themeMusic);            // Title screen music; gameplay music starts on ENTER
 
     // TODO: Load resources / Initialize variables at this point
-    LoadLevel(5);
+    LoadLevel(0);
 
     // Low-res scene texture, upscaled with point filtering for crisp pixels
     Image riverImage = GenImageColor(RIVER_RES, RIVER_RES, BLACK);
