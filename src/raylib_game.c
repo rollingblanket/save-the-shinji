@@ -118,6 +118,9 @@ typedef struct LevelDef {
 
     Vector2 playerSpawn;
     Color robotWantedColor;
+
+    Color mainColor;        // Main river source color; alpha 0 = default blue
+    float mainDrainDelay;   // Seconds until the main source dries up; 0 = never
 } LevelDef;
 
 typedef struct JunctionRender {
@@ -415,6 +418,13 @@ static const char *miniBubbleSmall[3] = {
 // river mouth (not just when the steady-state color changes on merge)
 static Color robotWantedColor = { 0 };  // Target water color, set in BuildRivers()
 static bool robotHappy = false;         // Latched true when the wanted color reaches the mouth
+
+// Main-river drain: some levels dry up the main source after a delay, and the
+// dry front advects toward the robot. The player must merge something in first
+static int mainSourceIndex = 0;         // Node index of the main river's source
+static float levelTime = 0.0f;          // Seconds since the level was loaded
+static float mainDrainAt = 0.0f;        // Drain start time; 0 = this level never drains
+static const float mainDrainFadeTime = 2.5f;    // Seconds for the source to fade from full to dry
 static int riverMouthIndex = 0;         // Node index of the main river mouth (under the robot)
 
 //----------------------------------------------------------------------------------
@@ -526,6 +536,7 @@ static void DrawSpellScene(void);       // Draw gate / spark / poof / frog by st
 static bool NodeDammed(int i);          // True if a closed door blocks node i's outflow
 static Color WaterColorAt(Vector2 p);   // Water color under a point, BLANK if not over water
 static bool WandMatchesDoor(const Door *door);  // Does the wand pigment satisfy the door's color lock?
+static bool MainDrained(void);          // True once this level's main source has dried up
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
 // Draw an ASCII sprite snapped to the low-res pixel grid (shadow = flat dark silhouette)
@@ -580,7 +591,7 @@ int main(void)
     PlayMusicStream(themeMusic);            // Title screen music; gameplay music starts on ENTER
 
     // TODO: Load resources / Initialize variables at this point
-    LoadLevel(0);
+    LoadLevel(5);
 
     // Low-res scene texture, upscaled with point filtering for crisp pixels
     Image riverImage = GenImageColor(RIVER_RES, RIVER_RES, BLACK);
@@ -691,6 +702,7 @@ void UpdateDrawFrame(void)
     mainPlayerPosition.x = Clamp(mainPlayerPosition.x, playerRadius, screenWidth - playerRadius);
     mainPlayerPosition.y = Clamp(mainPlayerPosition.y, playerRadius, screenHeight - playerRadius);
 
+        levelTime += GetFrameTime();
         UpdateRiverFlow(GetFrameTime());
     UpdateSpell(GetFrameTime());
     UpdateRobotMood();
@@ -728,6 +740,12 @@ void UpdateDrawFrame(void)
                 DrawText("Press R to hex a gate", 20, 660, 20, RAYWHITE);
             }
             DrawText("Press and hold SPACE to restart", 20, 690, 20, RAYWHITE);
+        }
+
+        // Drain warning: flashes for a few seconds once the main source dries
+        if (MainDrained() && !robotHappy && (levelTime < mainDrainAt + 4.0f) && (((int)(levelTime*3.0f))%2 == 0))
+        {
+            DrawText("The river is drying up!", 220, 340, 26, (Color){ 240, 90, 70, 255 });
         }
 
         // Gate / spell spark / poof / frog, depending on the spell state
@@ -928,7 +946,9 @@ static void BuildRivers(const LevelDef *level)
     {
         junctionNodes[i] = AddRiverNode((Vector2){ mainX, junctionYs[i] }, true, false, BLANK, -1);
     }
-    int mainSource = AddRiverNode((Vector2){ mainX, (float)screenHeight }, true, true, riverBlue, -1);
+    Color mainColor = (level->mainColor.a != 0)? level->mainColor : riverBlue;
+    int mainSource = AddRiverNode((Vector2){ mainX, (float)screenHeight }, true, true, mainColor, -1);
+    mainSourceIndex = mainSource;
 
     for (int i = 0; i < uniqueJunctionCount; i++)
     {
@@ -993,6 +1013,8 @@ static void BuildRivers(const LevelDef *level)
     wandFlashTimer = 0.0f;
     robotWantedColor = level->robotWantedColor;
     robotHappy = false;
+    levelTime = 0.0f;
+    mainDrainAt = level->mainDrainDelay;
 
     PropagateRiverColors();
     InitializeRiverSamples();
@@ -1109,14 +1131,36 @@ static void PropagateRiverColors(void)
     }
 }
 
+// True once this level's main source has dried up (0 = never drains)
+static bool MainDrained(void)
+{
+    return (mainDrainAt > 0.0f) && (levelTime >= mainDrainAt);
+}
+
 // Color of the water leaving node i right now, based on the water that has
 // actually ARRIVED at it (the tail samples of its inflow segments)
 static Color RiverNodeOutputColor(int i)
 {
-    if (rivers[i].isSource) return rivers[i].sourceColor;
+    if (rivers[i].isSource)
+    {
+        // A drained main source FADES out rather than cutting off: it emits
+        // progressively shallower water (alpha = depth), so the river narrows
+        // and tapers consistently along its length instead of ending in a
+        // hard dry edge. Fully faded = BLANK = dry
+        if ((i == mainSourceIndex) && MainDrained())
+        {
+            float fade = 1.0f - (levelTime - mainDrainAt)/mainDrainFadeTime;
+            if (fade <= 0.0f) return BLANK;
+            Color c = rivers[i].sourceColor;
+            c.a = (unsigned char)(255.0f*fade);
+            return c;
+        }
+        return rivers[i].sourceColor;
+    }
 
     Color mixed = { 0 };
     bool hasColor = false;
+    bool anyInflow = false;
     Color mainCol = rivers[i].color;
     bool hasMain = false;
 
@@ -1126,9 +1170,10 @@ static Color RiverNodeOutputColor(int i)
         {
             // Dammed nodes contribute nothing until their door opens
             if (NodeDammed(j)) continue;
+            anyInflow = true;
 
             Color c = rivers[j].samples[rivers[j].sampleCount - 1];     // Water arriving now
-            if (c.a == 0) continue;    // Channel is still refilling: nothing has arrived yet
+            if (c.a == 0) continue;    // Refilling or drying: nothing arriving right now
             mixed = hasColor? MixWaterColors(mixed, c) : c;
             hasColor = true;
             if (rivers[j].isMain)
@@ -1139,7 +1184,9 @@ static Color RiverNodeOutputColor(int i)
         }
     }
 
-    if (!hasColor) return rivers[i].color;
+    // Inflows exist but none carries water: pass the dryness along, so a dry
+    // front travels THROUGH junctions instead of stalling at them
+    if (!hasColor) return anyInflow? BLANK : rivers[i].color;
     if (!riversMerged && hasMain) return mainCol;   // Side inflows don't tint the main river yet
     return mixed;
 }
@@ -1171,6 +1218,8 @@ static void DipWand(void)
     Color w = WaterColorAt(mainPlayerPosition);
     if (w.a != 0)
     {
+        w.a = 255;      // Shallow (drying) water still charges a full pigment
+
         // The crystal flashes when it picks up a NEW pigment
         if (!wandCharged || !SameColor(w, wandColor)) {
             wandFlashTimer = wandFlashTime;
@@ -1470,19 +1519,26 @@ static void RenderRiverPixels(float time)
                         w = wseg->samples[k];
                     }
 
-                    if ((wseg->flow <= 0.0f) || (w.a == 0))
+                    // Sample alpha is water DEPTH: 255 = full channel, lower =
+                    // shallow (drying) water that pulls back from the banks,
+                    // 0 = dry bed. Draining rivers taper off instead of ending
+                    // in a hard edge
+                    float depth = w.a/255.0f;
+                    float waterHalf = channelHalfWidth*(0.30f + 0.70f*depth);
+
+                    if ((wseg->flow <= 0.0f) || (w.a == 0) || (d > waterHalf))
                     {
-                        // Dry bed: no flow, or the water refilling this channel
-                        // hasn't reached this stretch yet (alpha 0 samples)
+                        // Dry bed: no flow, water not arrived yet, or receded banks
                         out = (d > channelHalfWidth - 9.0f)? metalRamp[1] : metalRamp[2];
                     }
                     else
                     {
+                        w.a = 255;
                         // Flow streaks moving downstream
                         float sp = fmodf(wAlong - time*RIVER_FLOW_SPEED, 90.0f);
                         if (sp < 0.0f) sp += 90.0f;
-                        if ((sp < 15.0f) && (d < channelHalfWidth - 16.0f) && (((px*7 + py*3)%5) < 3)) w = WaterLight(w);
-                        if (d > channelHalfWidth - 9.0f) w = WaterDark(w);  // Waterline edge
+                        if ((sp < 15.0f) && (d < waterHalf - 16.0f) && (((px*7 + py*3)%5) < 3)) w = WaterLight(w);
+                        if (d > waterHalf - 9.0f) w = WaterDark(w);     // Waterline edge
                         out = w;
                     }
                 }

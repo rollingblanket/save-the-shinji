@@ -76,6 +76,20 @@ static const DoorDef level4Doors[] = {
 
 
 
+// Level 6, the drought. The main river is YELLOW this time, and 3 seconds in
+// its source dries up: a dry front creeps up the channel toward the robot.
+// The red side river has a plain gate; the robot wants orange (red + yellow).
+// Frog the gate while yellow still flows past the junction and the brew rides
+// the last of the water up to the robot. Hesitate, and the junction runs dry:
+// pure red arrives instead. Hold SPACE to retry
+static const SideRiverDef level5SideRivers[] = {
+    { .source = { 0, 375 }, .sourceColor = RIVER_RED, .junctionY = 375.0f }
+};
+
+static const DoorDef level5Doors[] = {
+    { .sideRiverIndex = 0 }     // Plain gate: the challenge is the clock, not the lock
+};
+
 static const LevelDef levelDefs[] = {
     {
         .sideRivers = level0SideRivers,
@@ -128,6 +142,19 @@ static const LevelDef levelDefs[] = {
         .doorCount = 4,
         .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
         .robotWantedColor = RIVER_VIOLET
+    },
+    {
+        // Level 6: the drought (orange, timed)
+        .sideRivers = level5SideRivers,
+        .sideRiverCount = 1,
+        .buttons = NULL,
+        .buttonCount = 0,
+        .doors = level5Doors,
+        .doorCount = 1,
+        .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
+        .robotWantedColor = RIVER_ORANGE,
+        .mainColor = RIVER_YELLOW,
+        .mainDrainDelay = 3.0f
     },
 };
 
