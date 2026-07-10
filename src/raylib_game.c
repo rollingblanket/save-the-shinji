@@ -439,7 +439,7 @@ static const float fizzleTime = 0.35f;
 
 // Restarting requires holding SPACE; a ring spinner shows the hold progress
 static float spaceHoldTime = 0.0f;
-static const float restartHoldTime = 1.0f;
+static const float restartHoldTime = 0.6f;
 static Vector2 spellPos = { 0 };            // Current position of the flying spark
 static float spellTimer = 0.0f;             // Timer for the transform poof
 static const float spellSpeed = 300.0f;     // Spark travel speed (pixels/second)
