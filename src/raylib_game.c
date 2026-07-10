@@ -297,7 +297,71 @@ static const char *robotSpriteHappy[ROBOT_H] = {
     "................................................",
     "................................................"
 };
+// Sad variant for the title screen: drooping outer eyebrows and a frown
+static const char *robotSpriteSad[ROBOT_H] = {
+    "..............................AAA...............",
+    "..............................AAA...............",
+    "..............................AAA...............",
+    ".............................D..................",
+    "............................D...................",
+    "...........................D....................",
+    "...........................D....................",
+    "...........................D....................",
+    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
+    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
+    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
+    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
+    ".DDDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDDD.",
+    "DMMDMMMMDLLLLLLLKKLLLLLLLLLLLLKKLLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLKKLLLLLLLLLLLLLLLLKKLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
+    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
+    ".DDDMMMMDLLLLLLLLLLLLKKKKKKLLLLLLLLLLLGDMMMMDDD.",
+    "...DMMMMDLLLLLLLLLLLKLLLLLLKLLLLLLLLLLGDMMMMD...",
+    "...DMMMMDLLLLLLLLLLKLLLLLLLLKLLLLLLLLLGDMMMMD...",
+    "...DMMMMDGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGDMMMMD...",
+    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
+    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
+    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
+    "................................................",
+    "................................................"
+};
 static const Vector2 robotPosition = { (float)screenWidth/2, 96 };  // Head center, over the river mouth
+
+//----------------------------------------------------------------------------------
+// Title screen: story typewriter + the classic raylib logo animation, playing
+// together on one screen. ENTER starts the game
+//----------------------------------------------------------------------------------
+static GameScreen currentScreen = SCREEN_TITLE;
+
+static const char *storyLines[] = {
+    "Shinji, the river robot, drinks from",
+    "the great river to power his brain.",
+    "",
+    "But the floodgates rusted shut, only one",
+    "witch still remembers how to brew the rivers.",
+    "",
+    "Casting hex to paint the water.",
+    "Save the Shinji.",
+};
+#define STORY_LINE_COUNT (int)(sizeof(storyLines)/sizeof(storyLines[0]))
+static float storyCharsShown = 0.0f;            // Typewriter progress, in characters
+static const float storyCharsPerSecond = 40.0f;
+
+// raylib logo animation, half scale (128px), bottom-right badge. Plays through
+// its classic states once, then stays put as a "powered by" mark
+static int logoState = 0;       // 0 corner blink, 1 top+left bars, 2 bottom+right bars, 3 letters
+static int logoFrames = 0;
+static int logoLetters = 0;
+static int logoTopW = 8, logoLeftH = 8, logoBottomW = 8, logoRightH = 8;
+#define LOGO_SIZE 128
+#define LOGO_BORDER 8
 
 // Thought bubble shown right of the robot: a snippet of river (two banks with
 // water between) in the color he wants. 'C' pixels resolve to robotWantedColor
@@ -444,6 +508,7 @@ static void DrawSprite(const char **rows, int w, int h, Vector2 worldPos, bool f
 static void DrawWitch(Vector2 worldPos, bool shadow);  // Draw the player sprite (or its shadow)
 static void DrawRobot(void);                            // Robot head with idle bob + antenna blink
 static void DrawRestartSpinner(float progress);         // Hold-to-restart progress ring
+static void UpdateDrawTitle(void);                      // Title screen: story + raylib logo badge
 
 //----------------------------------------------------------------------------------
 // Audio
@@ -537,6 +602,12 @@ void UpdateDrawFrame(void)
     // Update
     //----------------------------------------------------------------------------------
     UpdateMusicStream(backgroundMusic);
+
+    if (currentScreen != SCREEN_GAMEPLAY)
+    {
+        UpdateDrawTitle();
+        return;
+    }
 
     float dx = 0.0f, dy = 0.0f;
     if (IsKeyDown(KEY_W)) dy -= 2.0f;
@@ -1416,6 +1487,104 @@ static void DrawRobot(void)
         DrawRectangle((int)((left + 30)*RIVER_PIXEL), (int)(top*RIVER_PIXEL),
                       (int)(3*RIVER_PIXEL), (int)(3*RIVER_PIXEL), (Color){ 240, 224, 138, 255 });
     }
+}
+
+//--------------------------------------------------------------------------------------------
+// Title screen
+//--------------------------------------------------------------------------------------------
+static void UpdateDrawTitle(void)
+{
+    float t = (float)GetTime();
+
+    // Typewriter progress; total character count of the story
+    int totalChars = 0;
+    for (int i = 0; i < STORY_LINE_COUNT; i++) totalChars += (int)strlen(storyLines[i]);
+    storyCharsShown += GetFrameTime()*storyCharsPerSecond;
+    bool storyDone = (storyCharsShown >= totalChars);
+
+    // ENTER starts the game once the story is out; any key first fast-forwards it
+    if (IsKeyPressed(KEY_ENTER) && storyDone)
+    {
+        currentScreen = SCREEN_GAMEPLAY;
+        return;
+    }
+    if ((GetKeyPressed() != 0) && !storyDone) storyCharsShown = (float)totalChars;
+
+    // raylib logo animation: classic four states at half scale
+    logoFrames++;
+    if (logoState == 0)
+    {
+        if (logoFrames >= 60) { logoState = 1; logoFrames = 0; }
+    }
+    else if (logoState == 1)
+    {
+        logoTopW += 2; logoLeftH += 2;
+        if (logoTopW >= LOGO_SIZE) { logoState = 2; logoFrames = 0; }
+    }
+    else if (logoState == 2)
+    {
+        logoBottomW += 2; logoRightH += 2;
+        if (logoBottomW >= LOGO_SIZE) { logoState = 3; logoFrames = 0; }
+    }
+    else if ((logoLetters < 6) && (logoFrames%10 == 0)) logoLetters++;
+
+    BeginDrawing();
+        ClearBackground((Color){ 24, 26, 31, 255 });
+
+        // Title
+        const char *title = "SAVE THE SHINJI";
+        DrawText(title, (screenWidth - MeasureText(title, 44))/2, 64, 44, RAYWHITE);
+
+        // Sad Shinji, bobbing gently
+        Vector2 robotPos = { (float)screenWidth/2, 216 + sinf(t*1.6f)*RIVER_PIXEL };
+        DrawSprite(robotSpriteSad, ROBOT_W, ROBOT_H, robotPos, false, false);
+
+        // Story, revealed character by character. Each line is centered at its
+        // final position so the text doesn't shift while typing
+        int budget = (int)storyCharsShown;
+        int y = 370;
+        for (int i = 0; i < STORY_LINE_COUNT; i++)
+        {
+            int len = (int)strlen(storyLines[i]);
+            int show = (budget < len)? budget : len;
+            budget -= show;
+            if (show > 0)
+            {
+                int x = (screenWidth - MeasureText(storyLines[i], 20))/2;
+                DrawText(TextSubtext(storyLines[i], 0, show), x, y, 20, (Color){ 201, 209, 218, 255 });
+            }
+            y += (len == 0)? 14 : 28;
+        }
+
+        // Blinking prompt once the story is fully out
+        if (storyDone && (((int)(t*2.0f))%2 == 0))
+        {
+            const char *prompt = "- Press ENTER -";
+            DrawText(prompt, (screenWidth - MeasureText(prompt, 24))/2, 620, 24, YELLOW);
+        }
+
+        // raylib logo badge, bottom-right
+        int lx = screenWidth - LOGO_SIZE - 24;
+        int ly = screenHeight - LOGO_SIZE - 24;
+        if (logoState == 0)
+        {
+            if ((logoFrames/10)%2 == 0)
+                DrawRectangle(lx, ly, LOGO_BORDER*2, LOGO_BORDER*2, RAYWHITE);
+        }
+        else
+        {
+            DrawRectangle(lx, ly, logoTopW, LOGO_BORDER, RAYWHITE);
+            DrawRectangle(lx, ly, LOGO_BORDER, logoLeftH, RAYWHITE);
+            if (logoState >= 2)
+            {
+                DrawRectangle(lx + LOGO_SIZE - LOGO_BORDER, ly, LOGO_BORDER, logoRightH, RAYWHITE);
+                DrawRectangle(lx, ly + LOGO_SIZE - LOGO_BORDER, logoBottomW, LOGO_BORDER, RAYWHITE);
+            }
+            if (logoState >= 3)
+                DrawText(TextSubtext("raylib", 0, logoLetters), lx + 42, ly + 88, 25, RAYWHITE);
+        }
+
+    EndDrawing();
 }
 
 #include "restart_spinner.inc"
