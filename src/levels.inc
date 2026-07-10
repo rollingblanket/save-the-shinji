@@ -22,6 +22,23 @@ static const DoorDef level1Doors[] = {
     { .sideRiverIndex = 1, .open = false }
 };
 
+// Level 3, the mixing chamber. Right river: yellow dammed behind the OUTER door,
+// a blue pool sealed between the two doors. Frog the outer door and yellow pours
+// into the pool, brewing green (contained while the inner door stays shut). Dip
+// the wand in the green (R over water), unlock the green-locked red gate on the
+// left, and red + blue = purple. Opening the inner door spills the pool into the
+// main river = fail, hold SPACE to retry
+static const SideRiverDef level2SideRivers[] = {
+    { .source = { 0, 290 }, .sourceColor = RIVER_RED, .junctionY = 290.0f },
+    { .source = { 720, 290 }, .sourceColor = RIVER_YELLOW, .junctionY = 290.0f }
+};
+
+static const DoorDef level2Doors[] = {
+    { .sideRiverIndex = 0, .requiresWandColor = RIVER_GREEN },              // red gate, green lock
+    { .sideRiverIndex = 1 },                                                // inner door: the trap
+    { .sideRiverIndex = 1, .distFromMouth = 170.0f, .fill = RIVER_BLUE }    // outer door, blue pool below
+};
+
 static const LevelDef levelDefs[] = {
     {
         .sideRivers = level0SideRivers,
@@ -42,6 +59,16 @@ static const LevelDef levelDefs[] = {
         .doorCount = 2,
         .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
         .robotWantedColor = { 136, 60, 184, 255 }
+    },
+    {
+        .sideRivers = level2SideRivers,
+        .sideRiverCount = 2,
+        .buttons = NULL,
+        .buttonCount = 0,
+        .doors = level2Doors,
+        .doorCount = 3,
+        .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
+        .robotWantedColor = RIVER_PURPLE
     }
 
 };

@@ -62,24 +62,34 @@ typedef struct RiverNode {
     bool isMain;            // Part of the main river (side rivers may flow into it)
     bool isSource;
     int sideRiverIndex;     // -1 for main river nodes; side source id otherwise
+    int damDoor;            // Door blocking this node's outflow, -1 = none
+    bool isPool;            // Segment is a dye basin (a door fill): water flowing
+                            // through it always blends with standingColor
     Color sourceColor;      // Fixed color, only used when isSource
+    Color standingColor;    // Initial fill of the segment to downstream
     Color color;            // Computed: steady-state color of water leaving this node
     float flow;             // Computed: water volume through this node, 0 = dry
     Color samples[MAX_SEGMENT_SAMPLES]; // Water colors along segment to downstream, head first
     int sampleCount;
 } RiverNode;
 
-// A door that controls one (or one portion of a) side river.
+// A door dams one point of a side river: water upstream of it stands still until
+// the spell opens it. May carry a color lock (only a matching wand opens it)
 typedef struct Door {
     Rectangle rect;
     int sideRiverIndex;
-    bool open;      // A door is closed by default
-    bool frogged;   // Opened by the spell: a frog sits here now
+    bool open;              // A door is closed by default
+    bool frogged;           // Opened by the spell: a frog sits here now
+    Color requiresWandColor;// Lock: alpha 0 = no lock, any spell works
+    Color fill;             // Initial standing water just downstream of this door (alpha 0 = dry)
 } Door;
 
 typedef struct DoorDef {
     int sideRiverIndex;
+    float distFromMouth;    // 0 = at the junction bank; >0 = farther out along the side river
     bool open;
+    Color requiresWandColor;
+    Color fill;
 } DoorDef;
 
 // A button that controls opening of a door tagged by `doorIndex`.
@@ -419,6 +429,14 @@ typedef enum {
 static SpellState spellState = GATE_CLOSED;
 static int spellTargetDoor = -1;            // Door the current spell is aimed at
 
+// Wand: R over open water dips it, charging it with that water's color. Locked
+// gates only yield to a spell cast with the matching wand color
+static Color wandColor = { 0 };
+static bool wandCharged = false;
+static float fizzleTimer = 0.0f;            // Gray poof when a locked gate rejects the spell
+static Vector2 fizzlePos = { 0 };
+static const float fizzleTime = 0.35f;
+
 // Restarting requires holding SPACE; a ring spinner shows the hold progress
 static float spaceHoldTime = 0.0f;
 static const float restartHoldTime = 1.0f;
@@ -500,7 +518,8 @@ static void UpdateRobotMood(void);      // Latch robotHappy once the wanted colo
 static void StartSpell(void);           // Cast if the witch is near the gate (R key)
 static void UpdateSpell(float dt);      // Spell state machine: fly -> poof -> frog + merge
 static void DrawSpellScene(void);       // Draw gate / spark / poof / frog by state
-static bool SideRiverIsOpen(int sideRiverIndex); // True if no closed door blocks that side source
+static bool NodeDammed(int i);          // True if a closed door blocks node i's outflow
+static Color WaterColorAt(Vector2 p);   // Water color under a point, BLANK if not over water
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
 // Draw an ASCII sprite snapped to the low-res pixel grid (shadow = flat dark silhouette)
@@ -701,8 +720,18 @@ void UpdateDrawFrame(void)
             (int)mainPlayerPosition.x,
             (int)mainPlayerPosition.y,
             interactionRadius,
-            LIGHTGRAY
+            wandCharged? wandColor : LIGHTGRAY
         );
+
+        // Wand charge: a glowing bead above the witch's hat in the dipped color
+        if (wandCharged)
+        {
+            int bx = (int)roundf(witchHover.x/RIVER_PIXEL);
+            int by = (int)roundf(witchHover.y/RIVER_PIXEL) - 10;
+            DrawRectangle((int)(bx*RIVER_PIXEL), (int)(by*RIVER_PIXEL),
+                          (int)RIVER_PIXEL, (int)RIVER_PIXEL, wandColor);
+        }
+
 
         // Hold-to-restart progress spinner, center screen
         if (spaceHoldTime > 0.0f) DrawRestartSpinner(spaceHoldTime/restartHoldTime);
@@ -729,6 +758,8 @@ static int AddRiverNode(Vector2 position, bool isMain, bool isSource, Color sour
         .isMain = isMain,
         .isSource = isSource,
         .sideRiverIndex = sideRiverIndex,
+        .damDoor = -1,
+        .standingColor = sourceColor,
         .sourceColor = sourceColor,
         .color = sourceColor
     };
@@ -778,20 +809,23 @@ static void InitializeRiverSamples(void)
             float dy = rivers[d].position.y - rivers[i].position.y;
             int count = (int)(sqrtf(dx*dx + dy*dy)/RIVER_SAMPLE_SPACING) + 1;
             rivers[i].sampleCount = (count > MAX_SEGMENT_SAMPLES)? MAX_SEGMENT_SAMPLES : count;
-            Color c = (rivers[i].flow > 0.0f)? rivers[i].color : BLANK;
+            // A dam node's own segment (just downstream of its door) starts as the
+            // door's fill pool; everything else starts as its steady color, or dry
+            Color c;
+            rivers[i].isPool = (rivers[i].damDoor >= 0) && (doors[rivers[i].damDoor].fill.a != 0);
+            if (rivers[i].isPool) c = doors[rivers[i].damDoor].fill;
+            else c = (rivers[i].flow > 0.0f)? rivers[i].color : BLANK;
+            rivers[i].standingColor = (c.a != 0)? c : rivers[i].color;
             for (int k = 0; k < rivers[i].sampleCount; k++) rivers[i].samples[k] = c;
         }
         else rivers[i].sampleCount = 0;
     }
 }
 
-static bool SideRiverIsOpen(int sideRiverIndex)
+// A door dams the node it sits on: while closed, that node's water stops there
+static bool NodeDammed(int i)
 {
-    for (int i = 0; i < doorCount; i++)
-    {
-        if ((doors[i].sideRiverIndex == sideRiverIndex) && !doors[i].open) return false;
-    }
-    return true;
+    return (rivers[i].damDoor >= 0) && !doors[rivers[i].damDoor].open;
 }
 
 static void LoadLevel(int levelIndex)
@@ -805,19 +839,21 @@ static void LoadLevel(int levelIndex)
     for (int i = 0; i < doorCount; i++)
     {
         int sideIndex = level->doors[i].sideRiverIndex;
-        // The gate sits at the side river's MOUTH: where its centerline meets the
-        // main channel's bank. It blocks water from entering the junction; the
-        // side channel itself stays full of (dammed) water behind it
+        // distFromMouth 0 puts the gate at the junction bank; larger values move
+        // it outward along the side river. Water upstream of a closed gate stands
+        // still; the segment just downstream starts as the door's fill color
         const SideRiverDef *def = &level->sideRivers[sideIndex];
         float mainX = (float)screenWidth/2;
         float dir = (def->source.x < mainX)? -1.0f : 1.0f;
-        Vector2 block = { mainX + dir*channelHalfWidth, def->junctionY };
+        Vector2 block = { mainX + dir*(channelHalfWidth + level->doors[i].distFromMouth), def->junctionY };
         float w = GATE_W*RIVER_PIXEL;
         float h = GATE_H*RIVER_PIXEL;
         doors[i] = (Door){
             .rect = { block.x - w*0.5f, block.y - h*0.5f, w, h },
             .sideRiverIndex = sideIndex,
-            .open = level->doors[i].open
+            .open = level->doors[i].open,
+            .requiresWandColor = level->doors[i].requiresWandColor,
+            .fill = level->doors[i].fill
         };
     }
 
@@ -884,15 +920,36 @@ static void BuildRivers(const LevelDef *level)
     if (uniqueJunctionCount > 0) rivers[mainSource].downstream = junctionNodes[uniqueJunctionCount - 1];
     else rivers[mainSource].downstream = mouth;
 
-    // Side rivers enter their matching main-river junction.
+    // Side rivers enter their matching main-river junction. Each of the river's
+    // doors becomes a dam node along the way, splitting it into sections that
+    // hold (or brew) their own water
     for (int i = 0; i < level->sideRiverCount; i++)
     {
         int sortedJunction = FindJunctionY(junctionYs, uniqueJunctionCount, level->sideRivers[i].junctionY);
         if (sortedJunction < 0) continue;
 
         int junctionNode = junctionNodes[sortedJunction];
-        int sideSource = AddRiverNode(level->sideRivers[i].source, false, true, level->sideRivers[i].sourceColor, i);
-        rivers[sideSource].downstream = junctionNode;
+        int prev = AddRiverNode(level->sideRivers[i].source, false, true, level->sideRivers[i].sourceColor, i);
+
+        // Walk this river's doors from the outermost (nearest the source) inward
+        bool used[MAX_LEVEL_DOORS] = { 0 };
+        for (;;)
+        {
+            int next = -1;
+            for (int d = 0; d < doorCount; d++)
+            {
+                if ((doors[d].sideRiverIndex != i) || used[d]) continue;
+                if ((next < 0) || (level->doors[d].distFromMouth > level->doors[next].distFromMouth)) next = d;
+            }
+            if (next < 0) break;
+            used[next] = true;
+
+            int damNode = AddRiverNode(DoorCenter(&doors[next]), false, false, BLANK, i);
+            rivers[damNode].damDoor = next;
+            rivers[prev].downstream = damNode;
+            prev = damNode;
+        }
+        rivers[prev].downstream = junctionNode;
 
         if (junctionCount < MAX_JUNCTIONS)
         {
@@ -903,7 +960,7 @@ static void BuildRivers(const LevelDef *level)
                 .sideDir = (level->sideRivers[i].source.x < mainX)? -1.0f : 1.0f,
                 .upperMainSegment = junctionNode,
                 .lowerMainSegment = lowerMainSegment,
-                .sideSegment = sideSource
+                .sideSegment = prev
             };
         }
     }
@@ -913,6 +970,9 @@ static void BuildRivers(const LevelDef *level)
     spellState = GATE_CLOSED;
     spellTargetDoor = -1;
     spellTimer = 0.0f;
+    fizzleTimer = 0.0f;
+    wandCharged = false;
+    wandColor = (Color){ 0 };
     robotWantedColor = level->robotWantedColor;
     robotHappy = false;
 
@@ -1006,9 +1066,9 @@ static void PropagateRiverColors(void)
         int d = rivers[i].downstream;
         if (d >= 0)
         {
-            // A closed door dams the side river at its mouth: the channel stays
-            // full of water, but contributes nothing to the junction
-            bool dammed = (rivers[i].sideRiverIndex >= 0) && !SideRiverIsOpen(rivers[i].sideRiverIndex);
+            // A closed door dams its node: the water upstream stays put and
+            // contributes nothing downstream
+            bool dammed = NodeDammed(i);
 
             if (!dammed)
             {
@@ -1046,8 +1106,8 @@ static Color RiverNodeOutputColor(int i)
     {
         if ((rivers[j].downstream == i) && (rivers[j].flow > 0.0f) && (rivers[j].sampleCount > 0))
         {
-            // Dammed side rivers contribute nothing until their door opens
-            if ((rivers[j].sideRiverIndex >= 0) && !SideRiverIsOpen(rivers[j].sideRiverIndex)) continue;
+            // Dammed nodes contribute nothing until their door opens
+            if (NodeDammed(j)) continue;
 
             Color c = rivers[j].samples[rivers[j].sampleCount - 1];     // Water arriving now
             if (c.a == 0) continue;    // Channel is still refilling: nothing has arrived yet
@@ -1086,7 +1146,8 @@ static void UpdateRobotMood(void)
     }
 }
 
-// Cast the spell at the nearest closed gate within range (one spell at a time)
+// R: cast at the nearest closed gate in range (honoring its color lock); with no
+// gate in range, dip the wand into the water below the witch instead
 static void StartSpell(void)
 {
     if (spellState != GATE_CLOSED) return;
@@ -1103,7 +1164,28 @@ static void StartSpell(void)
             targetDoor = i;
         }
     }
-    if (targetDoor < 0) return;
+
+    if (targetDoor < 0)
+    {
+        // No gate around: dip the wand, taking the color of the water below
+        Color w = WaterColorAt(mainPlayerPosition);
+        if (w.a != 0)
+        {
+            wandColor = w;
+            wandCharged = true;
+        }
+        return;
+    }
+
+    Door *door = &doors[targetDoor];
+    if ((door->requiresWandColor.a != 0) &&
+        (!wandCharged || !SameColor(wandColor, door->requiresWandColor)))
+    {
+        // Locked: the spell fizzles against the gate's rune
+        fizzleTimer = fizzleTime;
+        fizzlePos = DoorCenter(door);
+        return;
+    }
 
     spellTargetDoor = targetDoor;
     spellState = SPELL_FLYING;
@@ -1115,6 +1197,8 @@ static void StartSpell(void)
 // the rivers actually merge (this is where the old R-key merge code moved to)
 static void UpdateSpell(float dt)
 {
+    if (fizzleTimer > 0.0f) fizzleTimer -= dt;
+
     if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount)) return;
     Vector2 gatePosition = DoorCenter(&doors[spellTargetDoor]);
 
@@ -1162,8 +1246,16 @@ static void UpdateRiverFlow(float dt)
 
         for (int i = 0; i < riverCount; i++)
         {
+            if (rivers[i].sampleCount <= 0) continue;
+            if (NodeDammed(i)) continue;    // Standing water behind a closed gate: frozen
+
             for (int k = rivers[i].sampleCount - 1; k > 0; k--) rivers[i].samples[k] = rivers[i].samples[k - 1];
-            if (rivers[i].sampleCount > 0) rivers[i].samples[0] = out[i];
+
+            // A dye basin blends everything flowing through it with its base
+            // color: yellow into a blue pool brews green, dammed or not
+            Color inj = out[i];
+            if ((inj.a != 0) && rivers[i].isPool) inj = MixWaterColors(inj, rivers[i].standingColor);
+            rivers[i].samples[0] = inj;
         }
     }
 }
@@ -1199,6 +1291,27 @@ static float RiverDistance(Vector2 p)
         if (d < best) best = d;
     }
     return best;
+}
+
+// Water color under a point: the nearest segment's advected sample. BLANK when
+// the point is not over water, or the channel there is dry
+static Color WaterColorAt(Vector2 p)
+{
+    float best = 1e9f, bestT = 0.0f;
+    int bestSeg = -1;
+    for (int i = 0; i < riverCount; i++)
+    {
+        int ds = rivers[i].downstream;
+        if (ds < 0) continue;
+        float t = 0.0f;
+        float d = SegmentDistance(p, rivers[i].position, rivers[ds].position, &t);
+        if (d < best) { best = d; bestT = t; bestSeg = i; }
+    }
+    if ((bestSeg < 0) || (best > channelHalfWidth)) return BLANK;
+    if (rivers[bestSeg].sampleCount <= 0) return BLANK;
+
+    int k = (int)(bestT*(rivers[bestSeg].sampleCount - 1));
+    return rivers[bestSeg].samples[k];  // Dry channels read as BLANK naturally
 }
 
 
@@ -1589,6 +1702,32 @@ static void UpdateDrawTitle(void)
 
 #include "restart_spinner.inc"
 
+// Draw a gate with its bars in the given color: metal for plain gates, the lock
+// color for color-locked ones (the whole door shows what wand it wants)
+static void DrawGate(Vector2 worldPos, Color barColor)
+{
+    int left = (int)roundf(worldPos.x/RIVER_PIXEL) - GATE_W/2;
+    int top = (int)roundf(worldPos.y/RIVER_PIXEL) - GATE_H/2;
+
+    for (int y = 0; y < GATE_H; y++)
+    {
+        for (int x = 0; x < GATE_W; x++)
+        {
+            char c = gateSprite[y][x];
+            if (c == '.') continue;
+            Color col = (c == 'M')? barColor : SpriteColor(c);
+            DrawRectangle((int)((left + x)*RIVER_PIXEL), (int)((top + y)*RIVER_PIXEL),
+                          (int)RIVER_PIXEL, (int)RIVER_PIXEL, col);
+        }
+    }
+}
+
+// Color a gate's bars should show: its lock color, or plain metal when unlocked
+static Color GateBarColor(const Door *door)
+{
+    return (door->requiresWandColor.a != 0)? door->requiresWandColor : SpriteColor('M');
+}
+
 // Gates / spark / poof / frogs, drawn on the same low-res pixel grid as the scene
 static void DrawSpellScene(void)
 {
@@ -1604,14 +1743,19 @@ static void DrawSpellScene(void)
             // The transform effect draws the target gate itself (lingering half-poof)
             if ((spellState == GATE_TRANSFORM) && (i == spellTargetDoor)) continue;
 
-            DrawSprite(gateSprite, GATE_W, GATE_H, doorPosition, false, false);
+            // Color-locked gates are painted entirely in their lock color
+            DrawGate(doorPosition, GateBarColor(&doors[i]));
 
-            // Cast-range hint: pulsing ring while the witch is close enough to cast
+            // Cast-range hint: pulsing ring while the witch is close enough. Gray
+            // when the gate's lock does not match the wand
             if ((spellState == GATE_CLOSED) &&
                 (Vector2Distance(mainPlayerPosition, doorPosition) <= gateCastRadius))
             {
+                bool locked = (doors[i].requiresWandColor.a != 0);
+                bool wandFits = !locked || (wandCharged && SameColor(wandColor, doors[i].requiresWandColor));
                 DrawCircleLines((int)doorPosition.x, (int)doorPosition.y,
-                                gateCastRadius + sinf(t*6.0f)*3.0f, YELLOW);
+                                gateCastRadius + sinf(t*6.0f)*3.0f,
+                                wandFits? YELLOW : (Color){ 130, 130, 140, 255 });
             }
         }
         else if (doors[i].frogged)
@@ -1621,16 +1765,26 @@ static void DrawSpellScene(void)
         }
     }
 
+    // Fizzle: a fading gray puff where a locked gate rejected the spell
+    if (fizzleTimer > 0.0f)
+    {
+        unsigned char a = (unsigned char)(255*fizzleTimer/fizzleTime);
+        Color gray = { 120, 120, 130, a };
+        DrawRectangle((int)(fizzlePos.x - 9), (int)(fizzlePos.y - 9), 18, 18, gray);
+        DrawRectangle((int)(fizzlePos.x - 21), (int)(fizzlePos.y - 3), 6, 6, gray);
+        DrawRectangle((int)(fizzlePos.x + 15), (int)(fizzlePos.y - 3), 6, 6, gray);
+    }
+
     if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount)) return;
     Vector2 gatePosition = DoorCenter(&doors[spellTargetDoor]);
 
     if (spellState == SPELL_FLYING)
     {
-        // Gold spark: bright core with cross arms, snapped to the pixel grid
+        // Spark: bright core with cross arms in the wand's color (gold by default)
         float sx = roundf(spellPos.x/RIVER_PIXEL)*RIVER_PIXEL;
         float sy = roundf(spellPos.y/RIVER_PIXEL)*RIVER_PIXEL;
         Color core = { 255, 244, 180, 255 };
-        Color gold = { 217, 168, 60, 255 };
+        Color gold = wandCharged? wandColor : (Color){ 217, 168, 60, 255 };
         DrawRectangle((int)(sx - RIVER_PIXEL), (int)(sy - RIVER_PIXEL),
                       (int)(2*RIVER_PIXEL), (int)(2*RIVER_PIXEL), core);
         DrawRectangle((int)(sx - 2*RIVER_PIXEL), (int)(sy - RIVER_PIXEL/2), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
@@ -1641,7 +1795,7 @@ static void DrawSpellScene(void)
     else if (spellState == GATE_TRANSFORM)
     {
         // Poof: gate lingers for the first half, white flash expands and fades
-        if (spellTimer < transformTime*0.5f) DrawSprite(gateSprite, GATE_W, GATE_H, gatePosition, false, false);
+        if (spellTimer < transformTime*0.5f) DrawGate(gatePosition, GateBarColor(&doors[spellTargetDoor]));
 
         float f = spellTimer/transformTime;     // 0 -> 1
         unsigned char a = (unsigned char)(255*(1.0f - f));
