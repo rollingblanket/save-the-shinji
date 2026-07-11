@@ -14,6 +14,7 @@ static const DoorDef level0Doors[] = {
 static const SideRiverDef level1SideRivers[] = {
     { .source = { 0, 375 }, .sourceColor = RIVER_YELLOW, .junctionY = 375.0f },
     { .source = { 800, 375 }, .sourceColor = RIVER_RED, .junctionY = 375.0f }
+
 };
 
 static const DoorDef level1Doors[] = {
@@ -27,12 +28,12 @@ static const DoorDef level1Doors[] = {
 // the wand in the green (R over water), unlock the green-locked red gate on the
 // left, and red + blue = purple. Opening the inner door spills the pool into the
 // main river = fail, hold SPACE to retry
-static const SideRiverDef level3SideRivers[] = {
+static const SideRiverDef level2SideRivers[] = {
     { .source = { 0, 290 }, .sourceColor = RIVER_RED, .junctionY = 290.0f },
     { .source = { 720, 290 }, .sourceColor = RIVER_YELLOW, .junctionY = 290.0f }
 };
 
-static const DoorDef level3Doors[] = {
+static const DoorDef level2Doors[] = {
     { .sideRiverIndex = 0, .requiresWandColor = RIVER_GREEN },              // red gate, green lock
     { .sideRiverIndex = 1 },                                                // inner door: the trap
     { .sideRiverIndex = 1, .distFromMouth = 170.0f, .fill = RIVER_BLUE }    // outer door, blue pool below
@@ -45,12 +46,12 @@ static const DoorDef level3Doors[] = {
 // Dip the green from the main river itself (T), unlock the green-locked BLUE
 // river on the left, and its blue pours into the now-green main:
 // green + blue = teal, which is what the robot wants
-static const SideRiverDef level2SideRivers[] = {
+static const SideRiverDef level3SideRivers[] = {
     { .source = { 0, 290 }, .sourceColor = RIVER_BLUE, .junctionY = 290.0f },
     { .source = { 720, 460 }, .sourceColor = RIVER_YELLOW, .junctionY = 460.0f }
 };
 
-static const DoorDef level2Doors[] = {
+static const DoorDef level3Doors[] = {
     { .sideRiverIndex = 0, .requiresWandColor = RIVER_GREEN },  // blue river, green lock
     { .sideRiverIndex = 1 }                                     // yellow river, plain gate
 };
@@ -166,27 +167,26 @@ static const LevelDef levelDefs[] = {
         .robotWantedColor = { 136, 60, 184, 255 }
     },
     {
-        // Level 4: the two-stage brew (teal)
         .sideRivers = level2SideRivers,
         .sideRiverCount = 2,
         .buttons = NULL,
         .buttonCount = 0,
         .doors = level2Doors,
-        .doorCount = 2,
+        .doorCount = 3,
         .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
-        .robotWantedColor = RIVER_TEAL
+        .robotWantedColor = RIVER_PURPLE
     },
     {
+        // Level 4: the two-stage brew (teal)
         .sideRivers = level3SideRivers,
         .sideRiverCount = 2,
         .buttons = NULL,
         .buttonCount = 0,
         .doors = level3Doors,
-        .doorCount = 3,
+        .doorCount = 2,
         .playerSpawn = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 },
-        .robotWantedColor = RIVER_PURPLE
+        .robotWantedColor = RIVER_TEAL
     },
-
     {
         // Level 5: the alchemy lab (violet)
         .sideRivers = level4SideRivers,
