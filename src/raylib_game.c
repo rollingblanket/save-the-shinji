@@ -132,7 +132,8 @@ typedef struct LevelDef
 
     Color mainColor;      // Main river source color; alpha 0 = default blue
     float mainDrainDelay; // Seconds until the main source dries up; 0 = never
-    bool mainDry;         // Main river starts DRY: an empty spine until a side river fills it
+    bool mainDry;         // Main river flows TRANSPARENT water: colors that enter
+                          // the spine stay in it (colorless water picks them up)
 } LevelDef;
 
 typedef struct JunctionRender
@@ -295,6 +296,7 @@ static bool robotHappy = false;      // Latched true when the wanted color reach
 // Main-river drain: some levels dry up the main source after a delay, and the
 // dry front advects toward the robot. The player must merge something in first
 static int mainSourceIndex = 0;              // Node index of the main river's source
+static bool transparentSpine = false;        // This level's main river carries colorless water
 static float levelTime = 0.0f;               // Seconds since the level was loaded
 static float mainDrainAt = 0.0f;             // Drain start time; 0 = this level never drains
 static const float mainDrainFadeTime = 2.5f; // Seconds for the source to fade from full to dry
@@ -742,7 +744,12 @@ static void InitializeRiverSamples(void)
             if (rivers[i].isPool)
                 c = doors[rivers[i].damDoor].fill;
             else
-                c = (rivers[i].flow > 0.0f) ? rivers[i].color : BLANK;
+            {
+                // A segment behind a closed door starts EMPTY (blocking is by
+                // content: nothing has passed the door yet). Flowing segments
+                // start at their steady color; dry ones start empty
+                c = ((rivers[i].flow > 0.0f) && !NodeDammed(i)) ? rivers[i].color : BLANK;
+            }
             rivers[i].standingColor = (c.a != 0) ? c : rivers[i].color;
             for (int k = 0; k < rivers[i].sampleCount; k++)
                 rivers[i].samples[k] = c;
@@ -846,7 +853,8 @@ static void BuildRivers(const LevelDef *level)
     }
     Color mainColor = (level->mainColor.a != 0) ? level->mainColor : riverBlue;
     if (level->mainDry)
-        mainColor = BLANK; // Dry spine: the source emits nothing
+        mainColor = BLANK; // Transparent spine: the source pushes colorless water
+    transparentSpine = level->mainDry;
     int mainSource = AddRiverNode((Vector2){mainX, (float)screenHeight}, true, true, mainColor, -1);
     mainSourceIndex = mainSource;
 
@@ -1000,9 +1008,10 @@ static void PropagateRiverColors(void)
         if (rivers[i].isSource)
         {
             rivers[i].color = rivers[i].sourceColor;
-            // A colorless source is a dry channel: it pushes no water. Colored
-            // sources always flow (closed doors block at the junction instead)
-            rivers[i].flow = (rivers[i].sourceColor.a != 0) ? 1.0f : 0.0f;
+            // Every source flows, including a TRANSPARENT one: colorless water
+            // is still water. It just contributes no pigment when it merges,
+            // so overlaying a new color onto it yields that color unchanged
+            rivers[i].flow = 1.0f;
         }
         else if (inFlow[i] > 0.0f)
         {
@@ -1031,7 +1040,9 @@ static void PropagateRiverColors(void)
 
             if (!dammed)
             {
-                if (rivers[i].flow > 0.0f)
+                // Colorless (transparent) water carries flow but no pigment:
+                // it never dilutes the mix
+                if ((rivers[i].flow > 0.0f) && (rivers[i].color.a != 0))
                 {
                     mixColor[d] = hasColor[d] ? MixWaterColors(mixColor[d], rivers[i].color) : rivers[i].color;
                     hasColor[d] = true;
@@ -1087,13 +1098,14 @@ static Color RiverNodeOutputColor(int i)
 
     for (int j = 0; j < riverCount; j++)
     {
-        if ((rivers[j].downstream == i) && (rivers[j].flow > 0.0f) && (rivers[j].sampleCount > 0))
+        if ((rivers[j].downstream == i) && (rivers[j].sampleCount > 0))
         {
-            // Dammed nodes contribute nothing until their door opens
-            if (NodeDammed(j))
-                continue;
             anyInflow = true;
 
+            // Blocking is by CONTENT, not flags: whatever a closed door holds
+            // back never entered this segment, so its tail is simply blank.
+            // (No steady-flow check either: a draining slug of standing water
+            // is real arriving water even though the steady solver calls it dry)
             Color c = rivers[j].samples[rivers[j].sampleCount - 1]; // Water arriving now
             if (c.a == 0)
                 continue; // Refilling or drying: nothing arriving right now
@@ -1256,18 +1268,27 @@ static void UpdateRiverFlow(float dt)
         {
             if (rivers[i].sampleCount <= 0)
                 continue;
-            if (NodeDammed(i))
-                continue; // Standing water behind a closed gate: frozen
+
+            // The door at this node guards the segment's HEAD: closed = no
+            // inflow, and dryness follows the standing water as it drains away
+            // through an open exit downstream
+            Color inj = NodeDammed(i) ? BLANK : out[i];
+
+            // Transparent-spine levels: colorless water picks up the pigment it
+            // flows through, so a color that entered a channel STAYS there until
+            // a new color arrives and mixes. (Not in drought levels, where the
+            // receding water must genuinely leave dry riverbed behind)
+            if ((inj.a == 0) && transparentSpine && (rivers[i].samples[0].a != 0))
+                inj = rivers[i].samples[0];
 
             // A dye basin blends everything flowing through it with its base
             // color: yellow into a blue pool brews green, dammed or not
-            Color inj = out[i];
             if ((inj.a != 0) && rivers[i].isPool)
                 inj = MixWaterColors(inj, rivers[i].standingColor);
 
-            // Nothing coming in (a gate upstream is shut) and the exit gate is
-            // shut too: the standing water has nowhere to go. Without this it
-            // would slowly drain INTO the closed exit and turn transparent
+            // Standing water with nowhere to go stays put: nothing coming in
+            // and the next gate downstream is shut. (Without this the water
+            // would slowly drain INTO a closed door and turn transparent)
             int d = rivers[i].downstream;
             if ((inj.a == 0) && (d >= 0) && NodeDammed(d))
                 continue;
@@ -1746,6 +1767,10 @@ static void UpdateDrawEnding(void)
     ClearBackground((Color){24, 26, 31, 255});
 
     // Title cycling through the earned palette
+    // Happy Shinji at his usual spot (the module handles bob + fast blink)
+    DrawRobot((float)screenWidth, true, robotWantedColor, RIVER_PIXEL, RIVER_FLOW_SPEED);
+
+    // Title below the head, cycling through the earned palette
     const char *title = "CONGRATULATIONS!";
     Color titleColor = endingPalette[((int)(t * 1.5f)) % ENDING_PALETTE_COUNT];
     DrawText(title, (screenWidth - MeasureText(title, 44)) / 2, 64, 44, titleColor);
