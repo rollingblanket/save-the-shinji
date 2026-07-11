@@ -287,39 +287,6 @@ static void StartEnding(void)
     }
 }
 
-// Thought bubble shown right of the robot: a snippet of river (two banks with
-// water between) in the color he wants. 'C' pixels resolve to robotWantedColor
-// at draw time, so the bubble recolors itself per level. Tail dots bottom-left
-#define BUBBLE_W 24
-#define BUBBLE_H 15
-static const char *bubbleSprite[BUBBLE_H] = {
-    "......KKKKKKKKKK........",
-    "....KKLLLLLLLLLLKK......",
-    "...KLLLLLLLLLLLLLLLK....",
-    "..KLLLLLLLLLLLLLLLLLK...",
-    ".KLLLLLLLLLLLLLLLLLLLK..",
-    ".KLLKKKKKKKKKKKKKKKLLK..",
-    ".KLLCCCCCCCCCCCCCCCLLK..",
-    ".KLLCCCCCCCCCCCCCCCLLK..",
-    ".KLLCCCCCCCCCCCCCCCLLK..",
-    ".KLLKKKKKKKKKKKKKKKLLK..",
-    ".KLLLLLLLLLLLLLLLLLLLK..",
-    "..KLLLLLLLLLLLLLLLLLK...",
-    "...KLLLLLLLLLLLLLLLK....",
-    "....KKLLLLLLLLLLKK......",
-    "......KKKKKKKKKK........"};
-
-// Mini bubbles trailing between the robot and the thought bubble
-static const char *miniBubbleBig[4] = {
-    ".KK.",
-    "KLLK",
-    "KLLK",
-    ".KK."};
-static const char *miniBubbleSmall[3] = {
-    ".K.",
-    "KLK",
-    ".K."};
-
 // Level goal: the robot is happy once water of the color it wants ARRIVES at the
 // river mouth (not just when the steady-state color changes on merge)
 static Color robotWantedColor = {0}; // Target water color, set in BuildRivers()
@@ -1785,21 +1752,15 @@ static void UpdateDrawEnding(void)
 
     // Happy Shinji, bobbing, antenna ball blinking fast
     Vector2 robotPos = {(float)screenWidth / 2, 216 + sinf(t * 1.6f) * RIVER_PIXEL};
-    DrawSprite(robotSpriteHappy, ROBOT_W, ROBOT_H, robotPos, false, false);
-    if (((int)(t * 6.0f)) % 2 == 0)
-    {
-        int left = (int)roundf(robotPos.x / RIVER_PIXEL) - ROBOT_W / 2;
-        int top = (int)roundf(robotPos.y / RIVER_PIXEL) - ROBOT_H / 2;
-        DrawRectangle((int)((left + 30) * RIVER_PIXEL), (int)(top * RIVER_PIXEL),
-                      (int)(3 * RIVER_PIXEL), (int)(3 * RIVER_PIXEL), (Color){240, 224, 138, 255});
-    }
+    DrawHappyRobot(robotPos, RIVER_PIXEL);
 
     // The witch and the frog take their bow
     Vector2 witchPos = {270, 370 + sinf(t * 5.0f) * 4.0f};
-    DrawWitch(witchPos, false);
+    DrawWitch(witchPos, false, RIVER_PIXEL, WandCrystalColor());
     Vector2 frogPos = {450, 384 + ((((int)(t * 2.0f)) % 2 == 0) ? 0.0f : -RIVER_PIXEL)};
     const char **frame = (((int)(t * 2.0f)) % 2 == 0) ? frogSprite1 : frogSprite2;
-    DrawSprite(frame, FROG_W, FROG_H, frogPos, false, false);
+    DrawPixelSprite(frame, FROG_W, FROG_H, frogPos, false, false,
+                    RIVER_PIXEL, (Color){0});
 
     // Rainbow river: every brewed color drifting by in one channel
     int bandTop = 74; // Low-res rows: outline, dark edge, water, dark edge, outline
@@ -1849,8 +1810,6 @@ static void UpdateDrawEnding(void)
 
     EndDrawing();
 }
-
-#include "restart_spinner.inc"
 
 // Draw a gate with its bars in the given color: metal for plain gates, the lock
 // color for color-locked ones (the whole door shows what wand it wants)

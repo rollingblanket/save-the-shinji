@@ -217,3 +217,18 @@ void DrawSadRobot(Vector2 worldPosition, float pixelSize)
     DrawPixelSprite(robotSpriteSad, ROBOT_W, ROBOT_H, worldPosition,
                     false, false, pixelSize, (Color){ 0 });
 }
+
+void DrawHappyRobot(Vector2 worldPosition, float pixelSize)
+{
+    DrawPixelSprite(robotSpriteHappy, ROBOT_W, ROBOT_H, worldPosition,
+                    false, false, pixelSize, (Color){ 0 });
+
+    if (((int)((float)GetTime()*6.0f))%2 == 0)
+    {
+        int left = (int)roundf(worldPosition.x/pixelSize) - ROBOT_W/2;
+        int top = (int)roundf(worldPosition.y/pixelSize) - ROBOT_H/2;
+        DrawRectangle((int)((left + 30)*pixelSize), (int)(top*pixelSize),
+                      (int)(3*pixelSize), (int)(3*pixelSize),
+                      (Color){ 240, 224, 138, 255 });
+    }
+}
