@@ -1269,6 +1269,13 @@ static void UpdateRiverFlow(float dt)
             if (rivers[i].sampleCount <= 0)
                 continue;
 
+            // Standing water behind a closed gate: in normal levels it stays
+            // put -- the channels around it are already full, there is no empty
+            // space to pour into. Only in transparent-spine levels can it flow
+            // out, into the empty riverbed
+            if (NodeDammed(i) && !transparentSpine)
+                continue;
+
             // The door at this node guards the segment's HEAD: closed = no
             // inflow, and dryness follows the standing water as it drains away
             // through an open exit downstream
