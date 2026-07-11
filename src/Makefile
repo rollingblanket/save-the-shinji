@@ -29,7 +29,9 @@
 PLATFORM              ?= PLATFORM_DESKTOP
 
 # Define project variables
-PROJECT_NAME          ?= raylib_game
+# NOTE: PROJECT_NAME must match the GitHub repo name! The web build workflow
+# copies artifacts named after the repository (save-the-shinji.wasm etc.)
+PROJECT_NAME          ?= save-the-shinji
 PROJECT_VERSION       ?= 1.0
 PROJECT_BUILD_PATH    ?= .
 PROJECT_SOURCE_FILES  ?= raylib_game.c
@@ -55,7 +57,9 @@ BUILD_WEB_HEAP_SIZE   ?= 128MB
 BUILD_WEB_STACK_SIZE  ?= 1MB
 BUILD_WEB_ASYNCIFY_STACK_SIZE ?= 1048576
 BUILD_WEB_RESOURCES   ?= TRUE
-BUILD_WEB_RESOURCES_PATH  ?= resources
+# Preload the repo-root assets folder into the wasm virtual filesystem as
+# "assets", matching what AssetPath() expects (music/sfx live there)
+BUILD_WEB_RESOURCES_PATH  ?= ../assets@assets
 
 # Determine PLATFORM_OS in case PLATFORM_DESKTOP selected
 ifeq ($(PLATFORM),PLATFORM_DESKTOP)
