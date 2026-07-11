@@ -1775,7 +1775,7 @@ static void UpdateDrawEnding(void)
 
     // Title cycling through the earned palette
     // Happy Shinji at his usual spot (the module handles bob + fast blink)
-    DrawRobot((float)screenWidth, true, robotWantedColor, RIVER_PIXEL, RIVER_FLOW_SPEED);
+    // DrawRobot((float)screenWidth, true, robotWantedColor, RIVER_PIXEL, RIVER_FLOW_SPEED);
 
     // Title below the head, cycling through the earned palette
     const char *title = "CONGRATULATIONS!";
