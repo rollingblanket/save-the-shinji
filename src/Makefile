@@ -38,6 +38,13 @@ PROJECT_SOURCE_FILES  ?= raylib_game.c
 
 # raylib library variables
 RAYLIB_PATH           ?= $(shell brew --prefix raylib)
+# Web builds (CI) compile against a raylib SOURCE checkout, where headers and
+# the built libraylib.web.a live in raylib/src - not the include/lib layout of
+# an installed package (Homebrew), which desktop builds use below
+ifeq ($(PLATFORM),PLATFORM_WEB)
+    RAYLIB_INCLUDE_PATH ?= $(RAYLIB_PATH)/src
+    RAYLIB_LIB_PATH     ?= $(RAYLIB_PATH)/src
+endif
 RAYLIB_INCLUDE_PATH   ?= $(RAYLIB_PATH)/include
 RAYLIB_LIB_PATH       ?= $(RAYLIB_PATH)/lib
 

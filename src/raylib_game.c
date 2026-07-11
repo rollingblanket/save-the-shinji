@@ -665,7 +665,7 @@ void UpdateDrawFrame(void)
     // the pigment being carried
     if (IsKeyPressed(KEY_R)) StartSpell();
     // Enchanting wand is only available after level 2
-    if (currentLevelIndex >= 2 && IsKeyPressed(KEY_T)) DipWand();
+    if (currentLevelIndex >= 2 && IsKeyPressed(KEY_F)) DipWand();
 
     // SPACE: advancing after a win is a simple press, but restarting mid-level
     // must be HELD for a moment so a stray tap doesn't wipe progress
@@ -734,7 +734,7 @@ void UpdateDrawFrame(void)
         if (robotHappy) DrawText("Level complete! Press SPACE to continue", 20, 690, 20, YELLOW);
         else {
             if (currentLevelIndex >= 2) {
-                DrawText("Enchan(T) your wand with the river color", 20, 660, 20, RAYWHITE);
+                DrawText("Press F to dip your wand with the river color", 20, 660, 20, RAYWHITE);
             }
             if (currentLevelIndex < 2) {
                 DrawText("Press R to hex a gate", 20, 660, 20, RAYWHITE);
