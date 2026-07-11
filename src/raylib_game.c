@@ -256,9 +256,8 @@ static int logoTopW = 8, logoLeftH = 8, logoBottomW = 8, logoRightH = 8;
 // a rainbow river carrying every color the player brewed, and confetti
 //----------------------------------------------------------------------------------
 static const char *endingLines[] = {
-    "Every river runs in color again.",
-    "Shinji will never thirst.",
-};
+    "Thank you for playing!",
+    "Game By RnB | 2026"};
 #define ENDING_LINE_COUNT (int)(sizeof(endingLines) / sizeof(endingLines[0]))
 static float endingCharsShown = 0.0f;
 
