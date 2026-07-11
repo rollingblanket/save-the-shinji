@@ -114,6 +114,37 @@ static const DoorDef level6Doors[] = {
     { .sideRiverIndex = 3, .distFromMouth = 170.0f, .fill = RIVER_BLUE }            // right leg: black door, blue pool
 };
 
+// Level 8, Shinji's body II. Transparent spine again, but every limb is a
+// multi-stage refinery and every key is third-generation. Left leg: blue ->
+// red pool = purple -> blue pool = VIOLET (its violet-locked mouth is the
+// death-twin of the right leg's violet lock: same key, opposite fates). Right
+// arm: red -> yellow pool = orange -> red pool = VERMILION (mouth stays shut!).
+// Purple opens the arm, orange opens the left arm's outer door (blue -> yellow
+// pool = green), vermilion opens its mouth: green fills the spine. Violet opens
+// the right leg: yellow joins green = chartreuse in Shinji's head
+static const SideRiverDef level7SideRivers[] = {
+    { .source = { 0, 300 }, .sourceColor = RIVER_BLUE, .junctionY = 300.0f },       // left arm
+    { .source = { 720, 240 }, .sourceColor = RIVER_RED, .junctionY = 240.0f },      // right arm
+    { .source = { 0, 560 }, .sourceColor = RIVER_BLUE, .junctionY = 560.0f },       // left leg
+    { .source = { 720, 500 }, .sourceColor = RIVER_YELLOW, .junctionY = 500.0f }    // right leg
+};
+
+static const DoorDef level7Doors[] = {
+    // Left arm: spine <- [vermilion lock](yellow pool)[orange lock] <- blue source
+    { .sideRiverIndex = 0, .requiresWandColor = RIVER_VERMILION },
+    { .sideRiverIndex = 0, .distFromMouth = 150.0f, .requiresWandColor = RIVER_ORANGE, .fill = RIVER_YELLOW },
+    // Right arm: spine <- [black](red pool)[black](yellow pool)[purple lock] <- red source
+    { .sideRiverIndex = 1 },                                                        // mouth: the vermilion spill, trap
+    { .sideRiverIndex = 1, .distFromMouth = 130.0f, .fill = RIVER_RED },
+    { .sideRiverIndex = 1, .distFromMouth = 260.0f, .requiresWandColor = RIVER_PURPLE, .fill = RIVER_YELLOW },
+    // Left leg: spine <- [violet lock](blue pool)[black](red pool)[black] <- blue source
+    { .sideRiverIndex = 2, .requiresWandColor = RIVER_VIOLET },                     // mouth: the DEAD violet lock
+    { .sideRiverIndex = 2, .distFromMouth = 130.0f, .fill = RIVER_BLUE },
+    { .sideRiverIndex = 2, .distFromMouth = 260.0f, .fill = RIVER_RED },
+    // Right leg: spine <- [violet lock] <- yellow source (the LIVE violet lock)
+    { .sideRiverIndex = 3, .requiresWandColor = RIVER_VIOLET }
+};
+
 static const LevelDef levelDefs[] = {
     {
         .sideRivers = level0SideRivers,
@@ -190,6 +221,18 @@ static const LevelDef levelDefs[] = {
         .doorCount = 7,
         .playerSpawn = { (float)screenWidth/2, 660 },
         .robotWantedColor = RIVER_TEAL,
+        .mainDry = true
+    },
+    {
+        // Level 8: Shinji's body II (chartreuse, transparent spine)
+        .sideRivers = level7SideRivers,
+        .sideRiverCount = 4,
+        .buttons = NULL,
+        .buttonCount = 0,
+        .doors = level7Doors,
+        .doorCount = 9,
+        .playerSpawn = { (float)screenWidth/2, 660 },
+        .robotWantedColor = RIVER_CHARTREUSE,
         .mainDry = true
     },
 };
