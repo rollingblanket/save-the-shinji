@@ -1,13 +1,13 @@
 /*******************************************************************************************
-*
-*   raylib gamejam template
-*
-*   Code licensed under an unmodified zlib/libpng license, which is an OSI-certified,
-*   BSD-like license that allows static linking with closed source software
-*
-*   Copyright (c) 2022-2026 Ramon Santamaria (@raysan5)
-*
-********************************************************************************************/
+ *
+ *   raylib gamejam template
+ *
+ *   Code licensed under an unmodified zlib/libpng license, which is an OSI-certified,
+ *   BSD-like license that allows static linking with closed source software
+ *
+ *   Copyright (c) 2022-2026 Ramon Santamaria (@raysan5)
+ *
+ ********************************************************************************************/
 
 #include "raylib.h"
 #include "raymath.h"
@@ -17,13 +17,13 @@
 #include "witch.h"
 
 #if defined(PLATFORM_WEB)
-    #include <emscripten/emscripten.h>      // Emscripten library
+#include <emscripten/emscripten.h> // Emscripten library
 #endif
 
-#include <stdio.h>                          // Required for: printf()
-#include <stdlib.h>                         // Required for:
-#include <string.h>                         // Required for:
-#include <math.h>                           // Required for: sqrtf(), fmodf()
+#include <stdio.h>  // Required for: printf()
+#include <stdlib.h> // Required for:
+#include <string.h> // Required for:
+#include <math.h>   // Required for: sqrtf(), fmodf()
 
 //----------------------------------------------------------------------------------
 // Defines and Macros
@@ -32,18 +32,19 @@
 // NOTE: Avoiding those calls, also avoids const strings memory usage
 #define SUPPORT_LOG_INFO
 #if defined(SUPPORT_LOG_INFO)
-    #define LOG(...) printf(__VA_ARGS__)
+#define LOG(...) printf(__VA_ARGS__)
 #else
-    #define LOG(...)
+#define LOG(...)
 #endif
 
 //----------------------------------------------------------------------------------
 // Types and Structures Definition
 //----------------------------------------------------------------------------------
-typedef enum { 
-    SCREEN_LOGO = 0, 
-    SCREEN_TITLE, 
-    SCREEN_GAMEPLAY, 
+typedef enum
+{
+    SCREEN_LOGO = 0,
+    SCREEN_TITLE,
+    SCREEN_GAMEPLAY,
     SCREEN_ENDING
 } GameScreen;
 
@@ -56,61 +57,67 @@ typedef enum {
 // downstream node; junctions are nodes with multiple inflows. The segment to the
 // downstream node is subdivided into color samples that advect (shift) downstream
 // over time, so color changes travel along the river as a front
-#define RIVER_SAMPLE_SPACING 8.0f       // Distance between color samples (pixels)
-#define RIVER_FLOW_SPEED 220.0f         // How fast water/dye travels (pixels/second)
+#define RIVER_SAMPLE_SPACING 8.0f // Distance between color samples (pixels)
+#define RIVER_FLOW_SPEED 220.0f   // How fast water/dye travels (pixels/second)
 #define MAX_SEGMENT_SAMPLES 64
 
-typedef struct RiverNode {
+typedef struct RiverNode
+{
     Vector2 position;
-    int downstream;         // Index of node this one flows into, -1 = river mouth
-    bool isMain;            // Part of the main river (side rivers may flow into it)
+    int downstream; // Index of node this one flows into, -1 = river mouth
+    bool isMain;    // Part of the main river (side rivers may flow into it)
     bool isSource;
-    int sideRiverIndex;     // -1 for main river nodes; side source id otherwise
-    int damDoor;            // Door blocking this node's outflow, -1 = none
-    bool isPool;            // Segment is a dye basin (a door fill): water flowing
-                            // through it always blends with standingColor
-    Color sourceColor;      // Fixed color, only used when isSource
-    Color standingColor;    // Initial fill of the segment to downstream
-    Color color;            // Computed: steady-state color of water leaving this node
-    float flow;             // Computed: water volume through this node, 0 = dry
+    int sideRiverIndex;                 // -1 for main river nodes; side source id otherwise
+    int damDoor;                        // Door blocking this node's outflow, -1 = none
+    bool isPool;                        // Segment is a dye basin (a door fill): water flowing
+                                        // through it always blends with standingColor
+    Color sourceColor;                  // Fixed color, only used when isSource
+    Color standingColor;                // Initial fill of the segment to downstream
+    Color color;                        // Computed: steady-state color of water leaving this node
+    float flow;                         // Computed: water volume through this node, 0 = dry
     Color samples[MAX_SEGMENT_SAMPLES]; // Water colors along segment to downstream, head first
     int sampleCount;
 } RiverNode;
 
 // A door dams one point of a side river: water upstream of it stands still until
 // the spell opens it. May carry a color lock (only a matching wand opens it)
-typedef struct Door {
+typedef struct Door
+{
     Rectangle rect;
     int sideRiverIndex;
-    bool open;              // A door is closed by default
-    bool frogged;           // Opened by the spell: a frog sits here now
-    Color requiresWandColor;// Lock: alpha 0 = no lock, any spell works
-    Color fill;             // Initial standing water just downstream of this door (alpha 0 = dry)
+    bool open;               // A door is closed by default
+    bool frogged;            // Opened by the spell: a frog sits here now
+    Color requiresWandColor; // Lock: alpha 0 = no lock, any spell works
+    Color fill;              // Initial standing water just downstream of this door (alpha 0 = dry)
 } Door;
 
-typedef struct DoorDef {
+typedef struct DoorDef
+{
     int sideRiverIndex;
-    float distFromMouth;    // 0 = at the junction bank; >0 = farther out along the side river
+    float distFromMouth; // 0 = at the junction bank; >0 = farther out along the side river
     bool open;
     Color requiresWandColor;
     Color fill;
 } DoorDef;
 
 // A button that controls opening of a door tagged by `doorIndex`.
-typedef struct Button {
+typedef struct Button
+{
     Vector2 position;
     float radius;
-    int doorIndex;      // Which door this button controls
+    int doorIndex; // Which door this button controls
 } Button;
 
-typedef struct SideRiverDef {
+typedef struct SideRiverDef
+{
     Vector2 source;
     Color sourceColor;
     float junctionY;
 } SideRiverDef;
 
 // Contains every object of a level.
-typedef struct LevelDef {
+typedef struct LevelDef
+{
     const SideRiverDef *sideRivers;
     int sideRiverCount;
 
@@ -123,12 +130,13 @@ typedef struct LevelDef {
     Vector2 playerSpawn;
     Color robotWantedColor;
 
-    Color mainColor;        // Main river source color; alpha 0 = default blue
-    float mainDrainDelay;   // Seconds until the main source dries up; 0 = never
-    bool mainDry;           // Main river starts DRY: an empty spine until a side river fills it
+    Color mainColor;      // Main river source color; alpha 0 = default blue
+    float mainDrainDelay; // Seconds until the main source dries up; 0 = never
+    bool mainDry;         // Main river starts DRY: an empty spine until a side river fills it
 } LevelDef;
 
-typedef struct JunctionRender {
+typedef struct JunctionRender
+{
     Vector2 position;
     float sideDir;
     int upperMainSegment;
@@ -142,8 +150,7 @@ typedef struct JunctionRender {
 static const int screenWidth = 720;
 static const int screenHeight = 720;
 
-
-static RenderTexture2D target = { 0 };  // Render texture to render our game
+static RenderTexture2D target = {0}; // Render texture to render our game
 static int frameCounter = 0;
 
 // Interaction radius around the player
@@ -154,68 +161,65 @@ static const float interactionRadius = 25.0f;
 // Radius of the player.
 static const float playerRadius = 10.0f;
 
-static Vector2 mainPlayerPosition = { (float)screenWidth/2, (float)screenHeight - (float)screenHeight/4 };
+static Vector2 mainPlayerPosition = {(float)screenWidth / 2, (float)screenHeight - (float)screenHeight / 4};
 
 //----------------------------------------------------------------------------------
 // River globals
 //----------------------------------------------------------------------------------
 #define MAX_RIVER_NODES 32
 #define MAX_SIDE_RIVERS 8
-#define MAX_LEVEL_DOORS 8
+#define MAX_LEVEL_DOORS 12
 #define MAX_LEVEL_BUTTONS 8
 #define MAX_JUNCTIONS MAX_SIDE_RIVERS
-static RiverNode rivers[MAX_RIVER_NODES] = { 0 };
+static RiverNode rivers[MAX_RIVER_NODES] = {0};
 static int riverCount = 0;
 static bool riversMerged = false;   // Until true, junctions keep the main river's color
 static float riverFlowAccum = 0.0f; // Distance accumulator for advection steps
-static JunctionRender junctions[MAX_JUNCTIONS] = { 0 };
+static JunctionRender junctions[MAX_JUNCTIONS] = {0};
 static int junctionCount = 0;
-static Door doors[MAX_LEVEL_DOORS] = { 0 };
+static Door doors[MAX_LEVEL_DOORS] = {0};
 static int doorCount = 0;
-static Button buttons[MAX_LEVEL_BUTTONS] = { 0 };
+static Button buttons[MAX_LEVEL_BUTTONS] = {0};
 static int buttonCount = 0;
 static int currentLevelIndex = 0;
 
 // Pixel-art scene renderer: the whole scene (floor, walls, water) is generated
 // per-pixel into a low-res buffer from a distance field around the river
 // segments, then upscaled with point filtering for the pixel-art look
-#define RIVER_RES 120                       // Low-res buffer size (720/120 = 6x pixels)
-#define RIVER_PIXEL 6.0f                    // World pixels per buffer pixel
-static Color riverPixels[RIVER_RES*RIVER_RES] = { 0 };
-static Texture2D riverTexture = { 0 };
+#define RIVER_RES 120    // Low-res buffer size (720/120 = 6x pixels)
+#define RIVER_PIXEL 6.0f // World pixels per buffer pixel
+static Color riverPixels[RIVER_RES * RIVER_RES] = {0};
+static Texture2D riverTexture = {0};
 
 // Channel cross-section, in world pixels: water | slope | rim | outline
 static const float channelHalfWidth = 56.0f;
 static const float slopeWidth = 32.0f;
 static const float rimWidth = 18.0f;
-static const float cornerChamfer = 45.0f;   // 45-degree cut at junction corners
+static const float cornerChamfer = 45.0f; // 45-degree cut at junction corners
 
 // Metal wall shade ramp, darkest to lightest
 static const Color metalRamp[8] = {
-    { 13, 15, 18, 255 }, 
-    { 34, 38, 44, 255 }, 
-    { 57, 64, 74, 255 }, 
-    { 74, 81, 92, 255 },
-    { 111, 120, 133, 255 }, 
-    { 152, 161, 173, 255 }, 
-    { 201, 209, 218, 255 }, 
-    { 232, 237, 242, 255 }
-};
-static const Color floorDark = { 38, 41, 47, 255 };
-static const Color floorMid = { 43, 46, 53, 255 };
-static const Color floorNoise = { 49, 53, 60, 255 };
+    {13, 15, 18, 255},
+    {34, 38, 44, 255},
+    {57, 64, 74, 255},
+    {74, 81, 92, 255},
+    {111, 120, 133, 255},
+    {152, 161, 173, 255},
+    {201, 209, 218, 255},
+    {232, 237, 242, 255}};
+static const Color floorDark = {38, 41, 47, 255};
+static const Color floorMid = {43, 46, 53, 255};
+static const Color floorNoise = {49, 53, 60, 255};
 
 // 4x4 Bayer matrix for ordered dithering: color transitions blend across a band
 // by comparing against these thresholds, giving smooth pixel-art gradients
 static const float bayer4[4][4] = {
-    { 0.03f, 0.53f, 0.16f, 0.66f },
-    { 0.78f, 0.28f, 0.91f, 0.41f },
-    { 0.22f, 0.72f, 0.09f, 0.59f },
-    { 0.97f, 0.47f, 0.84f, 0.34f }
-};
+    {0.03f, 0.53f, 0.16f, 0.66f},
+    {0.78f, 0.28f, 0.91f, 0.41f},
+    {0.22f, 0.72f, 0.09f, 0.59f},
+    {0.97f, 0.47f, 0.84f, 0.34f}};
 
 #include "river_colors.h"
-
 
 //----------------------------------------------------------------------------------
 // Title screen: story typewriter + the classic raylib logo animation, playing
@@ -233,63 +237,134 @@ static const char *storyLines[] = {
     "Mix the right colors to...",
     "Save the Shinji.",
 };
-#define STORY_LINE_COUNT (int)(sizeof(storyLines)/sizeof(storyLines[0]))
-static float storyCharsShown = 0.0f;            // Typewriter progress, in characters
+#define STORY_LINE_COUNT (int)(sizeof(storyLines) / sizeof(storyLines[0]))
+static float storyCharsShown = 0.0f; // Typewriter progress, in characters
 static const float storyCharsPerSecond = 40.0f;
 
 // raylib logo animation, half scale (128px), bottom-right badge. Plays through
 // its classic states once, then stays put as a "powered by" mark
-static int logoState = 0;       // 0 corner blink, 1 top+left bars, 2 bottom+right bars, 3 letters
+static int logoState = 0; // 0 corner blink, 1 top+left bars, 2 bottom+right bars, 3 letters
 static int logoFrames = 0;
 static int logoLetters = 0;
 static int logoTopW = 8, logoLeftH = 8, logoBottomW = 8, logoRightH = 8;
 #define LOGO_SIZE 128
 #define LOGO_BORDER 8
 
+//----------------------------------------------------------------------------------
+// Ending screen: shown after the last level. Happy Shinji, the witch, the frog,
+// a rainbow river carrying every color the player brewed, and confetti
+//----------------------------------------------------------------------------------
+static const char *endingLines[] = {
+    "Every river runs in color again.",
+    "Shinji will never thirst.",
+};
+#define ENDING_LINE_COUNT (int)(sizeof(endingLines) / sizeof(endingLines[0]))
+static float endingCharsShown = 0.0f;
+
+#define CONFETTI_COUNT 40
+static Vector2 confettiPos[CONFETTI_COUNT];
+static float confettiSpeed[CONFETTI_COUNT];
+static Color confettiColor[CONFETTI_COUNT];
+
+// Every color the player brewed across the levels, in rough story order
+static const Color endingPalette[] = {
+    RIVER_BLUE, RIVER_PURPLE, RIVER_GREEN, RIVER_TEAL, RIVER_VIOLET,
+    RIVER_ORANGE, RIVER_VERMILION, RIVER_YELLOW, RIVER_CHARTREUSE, RIVER_MAGENTA};
+#define ENDING_PALETTE_COUNT (int)(sizeof(endingPalette) / sizeof(endingPalette[0]))
+
+// Reset ending state and scatter fresh confetti (called when the screen opens)
+static void StartEnding(void)
+{
+    endingCharsShown = 0.0f;
+    while (GetKeyPressed() != 0)
+    {
+    } // Flush stale keypresses from the previous screen
+    for (int i = 0; i < CONFETTI_COUNT; i++)
+    {
+        confettiPos[i] = (Vector2){(float)GetRandomValue(0, screenWidth), (float)-GetRandomValue(0, screenHeight)};
+        confettiSpeed[i] = (float)GetRandomValue(50, 140);
+        confettiColor[i] = endingPalette[GetRandomValue(0, ENDING_PALETTE_COUNT - 1)];
+    }
+}
+
+// Thought bubble shown right of the robot: a snippet of river (two banks with
+// water between) in the color he wants. 'C' pixels resolve to robotWantedColor
+// at draw time, so the bubble recolors itself per level. Tail dots bottom-left
+#define BUBBLE_W 24
+#define BUBBLE_H 15
+static const char *bubbleSprite[BUBBLE_H] = {
+    "......KKKKKKKKKK........",
+    "....KKLLLLLLLLLLKK......",
+    "...KLLLLLLLLLLLLLLLK....",
+    "..KLLLLLLLLLLLLLLLLLK...",
+    ".KLLLLLLLLLLLLLLLLLLLK..",
+    ".KLLKKKKKKKKKKKKKKKLLK..",
+    ".KLLCCCCCCCCCCCCCCCLLK..",
+    ".KLLCCCCCCCCCCCCCCCLLK..",
+    ".KLLCCCCCCCCCCCCCCCLLK..",
+    ".KLLKKKKKKKKKKKKKKKLLK..",
+    ".KLLLLLLLLLLLLLLLLLLLK..",
+    "..KLLLLLLLLLLLLLLLLLK...",
+    "...KLLLLLLLLLLLLLLLK....",
+    "....KKLLLLLLLLLLKK......",
+    "......KKKKKKKKKK........"};
+
+// Mini bubbles trailing between the robot and the thought bubble
+static const char *miniBubbleBig[4] = {
+    ".KK.",
+    "KLLK",
+    "KLLK",
+    ".KK."};
+static const char *miniBubbleSmall[3] = {
+    ".K.",
+    "KLK",
+    ".K."};
+
 // Level goal: the robot is happy once water of the color it wants ARRIVES at the
 // river mouth (not just when the steady-state color changes on merge)
-static Color robotWantedColor = { 0 };  // Target water color, set in BuildRivers()
-static bool robotHappy = false;         // Latched true when the wanted color reaches the mouth
+static Color robotWantedColor = {0}; // Target water color, set in BuildRivers()
+static bool robotHappy = false;      // Latched true when the wanted color reaches the mouth
 
 // Main-river drain: some levels dry up the main source after a delay, and the
 // dry front advects toward the robot. The player must merge something in first
-static int mainSourceIndex = 0;         // Node index of the main river's source
-static float levelTime = 0.0f;          // Seconds since the level was loaded
-static float mainDrainAt = 0.0f;        // Drain start time; 0 = this level never drains
-static const float mainDrainFadeTime = 2.5f;    // Seconds for the source to fade from full to dry
-static int riverMouthIndex = 0;         // Node index of the main river mouth (under the robot)
+static int mainSourceIndex = 0;              // Node index of the main river's source
+static float levelTime = 0.0f;               // Seconds since the level was loaded
+static float mainDrainAt = 0.0f;             // Drain start time; 0 = this level never drains
+static const float mainDrainFadeTime = 2.5f; // Seconds for the source to fade from full to dry
+static int riverMouthIndex = 0;              // Node index of the main river mouth (under the robot)
 
 //----------------------------------------------------------------------------------
 // Spell: pressing R near the gate turns it into a frog, releasing the side river.
 // The rivers merge only when the spell actually hits the gate, so the whole chain
 // is visible: cast -> frog -> red water flows -> color front reaches the robot
 //----------------------------------------------------------------------------------
-typedef enum {
-    GATE_CLOSED = 0,    // Idle: no spell in flight, gates castable
-    SPELL_FLYING,       // Spark travels from the witch to the target gate
-    GATE_TRANSFORM      // Poof! Target gate is turning into a frog
+typedef enum
+{
+    GATE_CLOSED = 0, // Idle: no spell in flight, gates castable
+    SPELL_FLYING,    // Spark travels from the witch to the target gate
+    GATE_TRANSFORM   // Poof! Target gate is turning into a frog
 } SpellState;
 
 static SpellState spellState = GATE_CLOSED;
-static int spellTargetDoor = -1;            // Door the current spell is aimed at
+static int spellTargetDoor = -1; // Door the current spell is aimed at
 
 // Wand: R over open water dips it, charging it with that water's color. Locked
 // gates only yield to a spell cast with the matching wand color
-static Color wandColor = { 0 };
+static Color wandColor = {0};
 static bool wandCharged = false;
-static float wandFlashTimer = 0.0f;         // Crystal flash right after a dip
+static float wandFlashTimer = 0.0f; // Crystal flash right after a dip
 static const float wandFlashTime = 0.3f;
-static float fizzleTimer = 0.0f;            // Gray poof when a locked gate rejects the spell
-static Vector2 fizzlePos = { 0 };
+static float fizzleTimer = 0.0f; // Gray poof when a locked gate rejects the spell
+static Vector2 fizzlePos = {0};
 static const float fizzleTime = 0.35f;
 
 // Restarting requires holding SPACE; a ring spinner shows the hold progress
 static float spaceHoldTime = 0.0f;
 static const float restartHoldTime = 0.6f;
-static Vector2 spellPos = { 0 };            // Current position of the flying spark
-static float spellTimer = 0.0f;             // Timer for the transform poof
-static const float spellSpeed = 300.0f;     // Spark travel speed (pixels/second)
-static const float transformTime = 0.25f;   // Poof duration (seconds)
+static Vector2 spellPos = {0};            // Current position of the flying spark
+static float spellTimer = 0.0f;           // Timer for the transform poof
+static const float spellSpeed = 300.0f;   // Spark travel speed (pixels/second)
+static const float transformTime = 0.25f; // Poof duration (seconds)
 
 // The gate is drawn at door 0, which is derived from its side river mouth; the
 // witch must stand within gateCastRadius of it to cast.
@@ -318,8 +393,7 @@ static const char *gateSprite[GATE_H] = {
     "DMMD",
     "DMMD",
     "DMMD",
-    "DDDD"
-};
+    "DDDD"};
 
 // Frog, two idle frames (sitting / squashed blink)
 #define FROG_W 10
@@ -331,8 +405,7 @@ static const char *frogSprite1[FROG_H] = {
     "PPPPPPPPPP",
     "PQQQQQQQQP",
     "PQQQQQQQQP",
-    ".PP....PP."
-};
+    ".PP....PP."};
 static const char *frogSprite2[FROG_H] = {
     "..........",
     ".PP....PP.",
@@ -340,54 +413,53 @@ static const char *frogSprite2[FROG_H] = {
     "PPPPPPPPPP",
     "PQQQQQQQQP",
     "PQQQQQQQQP",
-    ".PP....PP."
-};
+    ".PP....PP."};
 
 //----------------------------------------------------------------------------------
 // River layout: the main river always runs vertically through the screen center
 // (screenWidth/2). Side rivers are the tweakable part
 //----------------------------------------------------------------------------------
-static const float mainRiverMouthY = 150.0f;        // Main river ends here (under the robot head)
+static const float mainRiverMouthY = 150.0f; // Main river ends here (under the robot head)
 
 #include "levels.inc"
-
 
 //----------------------------------------------------------------------------------
 // Module Functions Declaration
 //----------------------------------------------------------------------------------
-static void UpdateDrawFrame(void);      // Update and Draw one frame
-static void LoadLevel(int levelIndex);  // Reset level runtime state and create river network
+static void UpdateDrawFrame(void);              // Update and Draw one frame
+static void LoadLevel(int levelIndex);          // Reset level runtime state and create river network
 static void BuildRivers(const LevelDef *level); // Create the river network from level data
-static void PropagateRiverColors(void); // Recompute steady-state colors/flow (topological order)
-static void UpdateRiverFlow(float dt);  // Advect color samples downstream
-static void UpdateRobotMood(void);      // Latch robotHappy once the wanted color arrives at the mouth
-static void StartSpell(void);           // Cast if the witch is near a gate (R key)
-static void DipWand(void);              // Charge the wand with the water below (T key)
-static void UpdateSpell(float dt);      // Spell state machine: fly -> poof -> frog + merge
-static void DrawSpellScene(void);       // Draw gate / spark / poof / frog by state
-static bool NodeDammed(int i);          // True if a closed door blocks node i's outflow
-static Color WaterColorAt(Vector2 p);   // Water color under a point, BLANK if not over water
+static void PropagateRiverColors(void);         // Recompute steady-state colors/flow (topological order)
+static void UpdateRiverFlow(float dt);          // Advect color samples downstream
+static void UpdateRobotMood(void);              // Latch robotHappy once the wanted color arrives at the mouth
+static void StartSpell(void);                   // Cast if the witch is near a gate (R key)
+static void DipWand(void);                      // Charge the wand with the water below (T key)
+static void UpdateSpell(float dt);              // Spell state machine: fly -> poof -> frog + merge
+static void DrawSpellScene(void);               // Draw gate / spark / poof / frog by state
+static bool NodeDammed(int i);                  // True if a closed door blocks node i's outflow
+static Color WaterColorAt(Vector2 p);           // Water color under a point, BLANK if not over water
 static bool WandMatchesDoor(const Door *door);  // Does the wand pigment satisfy the door's color lock?
-static bool MainDrained(void);          // True once this level's main source has dried up
-static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
-static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
-static Color WandCrystalColor(void);        // Display color for the witch's wand crystal
-static void UpdateDrawTitle(void);                      // Title screen: story + raylib logo badge
+static bool MainDrained(void);                  // True once this level's main source has dried up
+static void RenderRiverPixels(float time);      // Fill the low-res scene buffer
+static float RiverDistance(Vector2 p);          // Distance from a point to the river centerline network
+static Color WandCrystalColor(void);            // Display color for the witch's wand crystal
+static void UpdateDrawTitle(void);              // Title screen: story + raylib logo badge
+static void UpdateDrawEnding(void);             // Congratulations screen after the last level
 
 //----------------------------------------------------------------------------------
 // Audio
 //----------------------------------------------------------------------------------
-static Music themeMusic = { 0 };        // Looping title screen music, streamed
-static Music backgroundMusic = { 0 };   // Looping level music, streamed
-static Sound goalSound = { 0 };         // Level complete jingle
-static Sound castSound = { 0 };         // Spell cast (R)
-static Sound wandSound = { 0 };         // Wand enchantment (T)
+static Music themeMusic = {0};      // Looping title screen music, streamed
+static Music backgroundMusic = {0}; // Looping level music, streamed
+static Sound goalSound = {0};       // Level complete jingle
+static Sound castSound = {0};       // Spell cast (R)
+static Sound wandSound = {0};       // Wand enchantment (T)
 
 // Resolve a file in assets/ whether the game runs from the repo root or src/
 static const char *AssetPath(const char *fileName)
 {
     static char path[256];
-    snprintf(path, sizeof(path), "%s/%s", DirectoryExists("assets")? "assets" : "../assets", fileName);
+    snprintf(path, sizeof(path), "%s/%s", DirectoryExists("assets") ? "assets" : "../assets", fileName);
     return path;
 }
 
@@ -397,10 +469,8 @@ static const char *AssetPath(const char *fileName)
 int main(void)
 {
 #if !defined(_DEBUG)
-    SetTraceLogLevel(LOG_NONE);         // Disable raylib trace log messages
+    SetTraceLogLevel(LOG_NONE); // Disable raylib trace log messages
 #endif
-
-
 
     // Initialization
     //--------------------------------------------------------------------------------------
@@ -415,8 +485,8 @@ int main(void)
     themeMusic.looping = true;
     backgroundMusic.looping = true;
     SetMusicVolume(themeMusic, 0.5f);
-    SetMusicVolume(backgroundMusic, 0.5f);  // Keep sfx audible over the music
-    PlayMusicStream(themeMusic);            // Title screen music; gameplay music starts on ENTER
+    SetMusicVolume(backgroundMusic, 0.5f); // Keep sfx audible over the music
+    PlayMusicStream(themeMusic);           // Title screen music; gameplay music starts on ENTER
 
     // TODO: Load resources / Initialize variables at this point
     LoadLevel(0);
@@ -435,11 +505,11 @@ int main(void)
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 60, 1);
 #else
-    SetTargetFPS(60);     // Set our game frames-per-second
+    SetTargetFPS(60); // Set our game frames-per-second
     //--------------------------------------------------------------------------------------
 
     // Main game loop
-    while (!WindowShouldClose())    // Detect window close button
+    while (!WindowShouldClose()) // Detect window close button
     {
         UpdateDrawFrame();
     }
@@ -459,7 +529,7 @@ int main(void)
 
     // TODO: Unload all loaded resources at this point
 
-    CloseWindow();        // Close window and OpenGL context
+    CloseWindow(); // Close window and OpenGL context
     //--------------------------------------------------------------------------------------
 
     return 0;
@@ -476,6 +546,11 @@ void UpdateDrawFrame(void)
     UpdateMusicStream(themeMusic);
     UpdateMusicStream(backgroundMusic);
 
+    if (currentScreen == SCREEN_ENDING)
+    {
+        UpdateDrawEnding();
+        return;
+    }
     if (currentScreen != SCREEN_GAMEPLAY)
     {
         UpdateDrawTitle();
@@ -483,24 +558,45 @@ void UpdateDrawFrame(void)
     }
 
     float dx = 0.0f, dy = 0.0f;
-    if (IsKeyDown(KEY_W)) dy -= 2.0f;
-    if (IsKeyDown(KEY_S)) dy += 2.0f;
-    if (IsKeyDown(KEY_A)) dx -= 2.0f;
-    if (IsKeyDown(KEY_D)) dx += 2.0f;
+    if (IsKeyDown(KEY_W))
+        dy -= 2.0f;
+    if (IsKeyDown(KEY_S))
+        dy += 2.0f;
+    if (IsKeyDown(KEY_A))
+        dx -= 2.0f;
+    if (IsKeyDown(KEY_D))
+        dx += 2.0f;
     // R casts the spell (only works near the gate)
     // R casts at gates, T dips the wand. Pressed, not held: holding T while
     // flying would re-dip the wand in every river crossed, silently replacing
     // the pigment being carried
-    if (IsKeyPressed(KEY_R)) StartSpell();
+    if (IsKeyPressed(KEY_R))
+        StartSpell();
     // Enchanting wand is only available after level 2
-    if (currentLevelIndex >= 2 && IsKeyPressed(KEY_F)) DipWand();
+    if (currentLevelIndex >= 2 && IsKeyPressed(KEY_F))
+        DipWand();
 
     // SPACE: advancing after a win is a simple press, but restarting mid-level
     // must be HELD for a moment so a stray tap doesn't wipe progress
     if (robotHappy)
     {
         spaceHoldTime = 0.0f;
-        if (IsKeyPressed(KEY_SPACE)) LoadLevel((currentLevelIndex + 1)%levelCount);
+        if (IsKeyPressed(KEY_SPACE))
+        {
+            if (currentLevelIndex == levelCount - 1)
+            {
+                // The last level: roll the congratulations screen. No early
+                // return: this frame still draws and ends normally, so the
+                // input poll in EndDrawing() runs before the screen switches
+                currentScreen = SCREEN_ENDING;
+                StartEnding();
+                StopMusicStream(backgroundMusic);
+                PlayMusicStream(themeMusic);
+                PlaySound(goalSound);
+            }
+            else
+                LoadLevel(currentLevelIndex + 1);
+        }
     }
     else if (IsKeyDown(KEY_SPACE))
     {
@@ -511,8 +607,8 @@ void UpdateDrawFrame(void)
             LoadLevel(currentLevelIndex);
         }
     }
-    else spaceHoldTime = 0.0f;
-
+    else
+        spaceHoldTime = 0.0f;
 
     // Face the direction of horizontal travel (sprite flips, bristles trail behind)
     WitchSetFacingFromMovement(dx);
@@ -520,78 +616,86 @@ void UpdateDrawFrame(void)
     // The witch can only fly above the river network (water + banks). Each axis
     // is tested separately so she slides along the channel edge instead of stopping
     float flyHalfWidth = channelHalfWidth + slopeWidth;
-    Vector2 tryX = { mainPlayerPosition.x + dx, mainPlayerPosition.y };
-    if (RiverDistance(tryX) <= flyHalfWidth) mainPlayerPosition.x = tryX.x;
-    Vector2 tryY = { mainPlayerPosition.x, mainPlayerPosition.y + dy };
-    if (RiverDistance(tryY) <= flyHalfWidth) mainPlayerPosition.y = tryY.y;
+    Vector2 tryX = {mainPlayerPosition.x + dx, mainPlayerPosition.y};
+    if (RiverDistance(tryX) <= flyHalfWidth)
+        mainPlayerPosition.x = tryX.x;
+    Vector2 tryY = {mainPlayerPosition.x, mainPlayerPosition.y + dy};
+    if (RiverDistance(tryY) <= flyHalfWidth)
+        mainPlayerPosition.y = tryY.y;
 
     // Keep the sprite on screen where the rivers touch the map edges
     mainPlayerPosition.x = Clamp(mainPlayerPosition.x, playerRadius, screenWidth - playerRadius);
     mainPlayerPosition.y = Clamp(mainPlayerPosition.y, playerRadius, screenHeight - playerRadius);
 
-        levelTime += GetFrameTime();
-        UpdateRiverFlow(GetFrameTime());
+    levelTime += GetFrameTime();
+    UpdateRiverFlow(GetFrameTime());
     UpdateSpell(GetFrameTime());
     UpdateRobotMood();
-
 
     frameCounter++;
     //----------------------------------------------------------------------------------
 
     // Draw
     //----------------------------------------------------------------------------------
-    // Render game screen to a texture, 
+    // Render game screen to a texture,
     // it could be useful for scaling or further shader postprocessing
     BeginTextureMode(target);
-        ClearBackground(RAYWHITE);
+    ClearBackground(RAYWHITE);
     EndTextureMode();
-    
+
     // Render to screen (main framebuffer)
     BeginDrawing();
-        ClearBackground(RAYWHITE);
-        
-        // Pixel-art scene: rebuild the low-res buffer and draw it scaled up
-        RenderRiverPixels((float)GetTime());
-        UpdateTexture(riverTexture, riverPixels);
-        DrawTexturePro(riverTexture,
-            (Rectangle){ 0, 0, RIVER_RES, RIVER_RES },
-            (Rectangle){ 0, 0, (float)screenWidth, (float)screenHeight },
-            (Vector2){ 0, 0 }, 0.0f, WHITE);
+    ClearBackground(RAYWHITE);
 
-        if (robotHappy) DrawText("Level complete! Press SPACE to continue", 20, 690, 20, YELLOW);
-        else {
-            if (currentLevelIndex >= 2) {
-                DrawText("Press F to dip your wand with the river color", 20, 660, 20, RAYWHITE);
-            }
-            if (currentLevelIndex < 2) {
-                DrawText("Press R to hex a gate", 20, 660, 20, RAYWHITE);
-            }
-            DrawText("Press and hold SPACE to restart", 20, 690, 20, RAYWHITE);
-        }
+    // Pixel-art scene: rebuild the low-res buffer and draw it scaled up
+    RenderRiverPixels((float)GetTime());
+    UpdateTexture(riverTexture, riverPixels);
+    DrawTexturePro(riverTexture,
+                   (Rectangle){0, 0, RIVER_RES, RIVER_RES},
+                   (Rectangle){0, 0, (float)screenWidth, (float)screenHeight},
+                   (Vector2){0, 0}, 0.0f, WHITE);
 
-        // Drain warning: flashes for a few seconds once the main source dries
-        if (MainDrained() && !robotHappy && (levelTime < mainDrainAt + 4.0f) && (((int)(levelTime*3.0f))%2 == 0))
+    // Level number, top-left corner
+    DrawText(TextFormat("Level %d", currentLevelIndex + 1), 20, 20, 20, RAYWHITE);
+
+    if (robotHappy)
+        DrawText("Level complete! Press SPACE to continue", 20, 690, 20, YELLOW);
+    else
+    {
+        if (currentLevelIndex >= 2)
         {
-            DrawText("The river is drying up!", 220, 340, 26, (Color){ 240, 90, 70, 255 });
+            DrawText("Press F to dip your wand with the river color", 20, 660, 20, RAYWHITE);
         }
+        if (currentLevelIndex < 2)
+        {
+            DrawText("Press R to hex a gate", 20, 660, 20, RAYWHITE);
+        }
+        DrawText("Press and hold SPACE to restart", 20, 690, 20, RAYWHITE);
+    }
 
-        // Gate / spell spark / poof / frog, depending on the spell state
-        DrawSpellScene();
+    // Drain warning: flashes for a few seconds once the main source dries
+    if (MainDrained() && !robotHappy && (levelTime < mainDrainAt + 4.0f) && (((int)(levelTime * 3.0f)) % 2 == 0))
+    {
+        DrawText("The river is drying up!", 220, 340, 26, (Color){240, 90, 70, 255});
+    }
 
-        // Robot head at the river's end (the river is its body)
-        DrawRobot((float)screenWidth, robotHappy, robotWantedColor,
-                  RIVER_PIXEL, RIVER_FLOW_SPEED);
+    // Gate / spell spark / poof / frog, depending on the spell state
+    DrawSpellScene();
 
-        // Player: shadow stays at the true position, the witch bobs above it
-        DrawWitch(mainPlayerPosition, true, RIVER_PIXEL, WandCrystalColor());
-        Vector2 witchHover = mainPlayerPosition;
-        witchHover.y += sinf((float)GetTime()*5.0f)*4.0f;
-        DrawWitch(witchHover, false, RIVER_PIXEL, WandCrystalColor());
+    // Robot head at the river's end (the river is its body)
+    DrawRobot((float)screenWidth, robotHappy, robotWantedColor,
+              RIVER_PIXEL, RIVER_FLOW_SPEED);
 
-        // Hold-to-restart progress spinner, center screen
-        if (spaceHoldTime > 0.0f)
-            DrawRestartSpinner(spaceHoldTime/restartHoldTime, RIVER_RES, RIVER_PIXEL);
-        // TODO: Draw everything that requires to be drawn at this point, maybe UI?
+    // Player: shadow stays at the true position, the witch bobs above it
+    DrawWitch(mainPlayerPosition, true, RIVER_PIXEL, WandCrystalColor());
+    Vector2 witchHover = mainPlayerPosition;
+    witchHover.y += sinf((float)GetTime() * 5.0f) * 4.0f;
+    DrawWitch(witchHover, false, RIVER_PIXEL, WandCrystalColor());
+
+    // Hold-to-restart progress spinner, center screen
+    if (spaceHoldTime > 0.0f)
+        DrawRestartSpinner(spaceHoldTime / restartHoldTime, RIVER_RES, RIVER_PIXEL);
+    // TODO: Draw everything that requires to be drawn at this point, maybe UI?
 
     EndDrawing();
     //----------------------------------------------------------------------------------
@@ -617,8 +721,7 @@ static int AddRiverNode(Vector2 position, bool isMain, bool isSource, Color sour
         .damDoor = -1,
         .standingColor = sourceColor,
         .sourceColor = sourceColor,
-        .color = sourceColor
-    };
+        .color = sourceColor};
     return riverCount++;
 }
 
@@ -641,7 +744,8 @@ static int FindJunctionY(const float *ys, int count, float y)
 {
     for (int i = 0; i < count; i++)
     {
-        if (fabsf(ys[i] - y) < 0.5f) return i;
+        if (fabsf(ys[i] - y) < 0.5f)
+            return i;
     }
     return -1;
 }
@@ -649,9 +753,8 @@ static int FindJunctionY(const float *ys, int count, float y)
 static Vector2 DoorCenter(const Door *door)
 {
     return (Vector2){
-        door->rect.x + door->rect.width*0.5f,
-        door->rect.y + door->rect.height*0.5f
-    };
+        door->rect.x + door->rect.width * 0.5f,
+        door->rect.y + door->rect.height * 0.5f};
 }
 
 static void InitializeRiverSamples(void)
@@ -663,18 +766,22 @@ static void InitializeRiverSamples(void)
         {
             float dx = rivers[d].position.x - rivers[i].position.x;
             float dy = rivers[d].position.y - rivers[i].position.y;
-            int count = (int)(sqrtf(dx*dx + dy*dy)/RIVER_SAMPLE_SPACING) + 1;
-            rivers[i].sampleCount = (count > MAX_SEGMENT_SAMPLES)? MAX_SEGMENT_SAMPLES : count;
+            int count = (int)(sqrtf(dx * dx + dy * dy) / RIVER_SAMPLE_SPACING) + 1;
+            rivers[i].sampleCount = (count > MAX_SEGMENT_SAMPLES) ? MAX_SEGMENT_SAMPLES : count;
             // A dam node's own segment (just downstream of its door) starts as the
             // door's fill pool; everything else starts as its steady color, or dry
             Color c;
             rivers[i].isPool = (rivers[i].damDoor >= 0) && (doors[rivers[i].damDoor].fill.a != 0);
-            if (rivers[i].isPool) c = doors[rivers[i].damDoor].fill;
-            else c = (rivers[i].flow > 0.0f)? rivers[i].color : BLANK;
-            rivers[i].standingColor = (c.a != 0)? c : rivers[i].color;
-            for (int k = 0; k < rivers[i].sampleCount; k++) rivers[i].samples[k] = c;
+            if (rivers[i].isPool)
+                c = doors[rivers[i].damDoor].fill;
+            else
+                c = (rivers[i].flow > 0.0f) ? rivers[i].color : BLANK;
+            rivers[i].standingColor = (c.a != 0) ? c : rivers[i].color;
+            for (int k = 0; k < rivers[i].sampleCount; k++)
+                rivers[i].samples[k] = c;
         }
-        else rivers[i].sampleCount = 0;
+        else
+            rivers[i].sampleCount = 0;
     }
 }
 
@@ -686,12 +793,14 @@ static bool NodeDammed(int i)
 
 static void LoadLevel(int levelIndex)
 {
-    if (levelIndex < 0) levelIndex = 0;
-    if (levelIndex >= levelCount) levelIndex = levelCount - 1;
+    if (levelIndex < 0)
+        levelIndex = 0;
+    if (levelIndex >= levelCount)
+        levelIndex = levelCount - 1;
     currentLevelIndex = levelIndex;
 
     const LevelDef *level = &levelDefs[currentLevelIndex];
-    doorCount = (level->doorCount > MAX_LEVEL_DOORS)? MAX_LEVEL_DOORS : level->doorCount;
+    doorCount = (level->doorCount > MAX_LEVEL_DOORS) ? MAX_LEVEL_DOORS : level->doorCount;
     for (int i = 0; i < doorCount; i++)
     {
         int sideIndex = level->doors[i].sideRiverIndex;
@@ -699,22 +808,22 @@ static void LoadLevel(int levelIndex)
         // it outward along the side river. Water upstream of a closed gate stands
         // still; the segment just downstream starts as the door's fill color
         const SideRiverDef *def = &level->sideRivers[sideIndex];
-        float mainX = (float)screenWidth/2;
-        float dir = (def->source.x < mainX)? -1.0f : 1.0f;
-        Vector2 block = { mainX + dir*(channelHalfWidth + level->doors[i].distFromMouth), def->junctionY };
-        float w = GATE_W*RIVER_PIXEL;
-        float h = GATE_H*RIVER_PIXEL;
+        float mainX = (float)screenWidth / 2;
+        float dir = (def->source.x < mainX) ? -1.0f : 1.0f;
+        Vector2 block = {mainX + dir * (channelHalfWidth + level->doors[i].distFromMouth), def->junctionY};
+        float w = GATE_W * RIVER_PIXEL;
+        float h = GATE_H * RIVER_PIXEL;
         doors[i] = (Door){
-            .rect = { block.x - w*0.5f, block.y - h*0.5f, w, h },
+            .rect = {block.x - w * 0.5f, block.y - h * 0.5f, w, h},
             .sideRiverIndex = sideIndex,
             .open = level->doors[i].open,
             .requiresWandColor = level->doors[i].requiresWandColor,
-            .fill = level->doors[i].fill
-        };
+            .fill = level->doors[i].fill};
     }
 
-    buttonCount = (level->buttonCount > MAX_LEVEL_BUTTONS)? MAX_LEVEL_BUTTONS : level->buttonCount;
-    for (int i = 0; i < buttonCount; i++) buttons[i] = level->buttons[i];
+    buttonCount = (level->buttonCount > MAX_LEVEL_BUTTONS) ? MAX_LEVEL_BUTTONS : level->buttonCount;
+    for (int i = 0; i < buttonCount; i++)
+        buttons[i] = level->buttons[i];
 
     mainPlayerPosition = level->playerSpawn;
     BuildRivers(level);
@@ -729,8 +838,8 @@ static void BuildRivers(const LevelDef *level)
 
     // Main river (blue): straight vertical channel flowing UPWARD (bottom to top),
     // always centered on the screen
-    float mainX = (float)screenWidth/2;
-    float junctionYs[MAX_JUNCTIONS] = { 0 };
+    float mainX = (float)screenWidth / 2;
+    float junctionYs[MAX_JUNCTIONS] = {0};
     int uniqueJunctionCount = 0;
     for (int i = 0; i < level->sideRiverCount; i++)
     {
@@ -742,7 +851,8 @@ static void BuildRivers(const LevelDef *level)
         {
             LOG("Side river %d source starts inside the main channel\n", i);
         }
-        if (FindJunctionY(junctionYs, uniqueJunctionCount, level->sideRivers[i].junctionY) >= 0) continue;
+        if (FindJunctionY(junctionYs, uniqueJunctionCount, level->sideRivers[i].junctionY) >= 0)
+            continue;
         if (uniqueJunctionCount >= MAX_JUNCTIONS)
         {
             LOG("Too many river junctions; increase MAX_JUNCTIONS\n");
@@ -760,24 +870,27 @@ static void BuildRivers(const LevelDef *level)
         }
     }
 
-    int mouth = AddRiverNode((Vector2){ mainX, mainRiverMouthY }, true, false, BLANK, -1);
+    int mouth = AddRiverNode((Vector2){mainX, mainRiverMouthY}, true, false, BLANK, -1);
     riverMouthIndex = mouth;
-    int junctionNodes[MAX_JUNCTIONS] = { 0 };
+    int junctionNodes[MAX_JUNCTIONS] = {0};
     for (int i = 0; i < uniqueJunctionCount; i++)
     {
-        junctionNodes[i] = AddRiverNode((Vector2){ mainX, junctionYs[i] }, true, false, BLANK, -1);
+        junctionNodes[i] = AddRiverNode((Vector2){mainX, junctionYs[i]}, true, false, BLANK, -1);
     }
-    Color mainColor = (level->mainColor.a != 0)? level->mainColor : riverBlue;
-    if (level->mainDry) mainColor = BLANK;  // Dry spine: the source emits nothing
-    int mainSource = AddRiverNode((Vector2){ mainX, (float)screenHeight }, true, true, mainColor, -1);
+    Color mainColor = (level->mainColor.a != 0) ? level->mainColor : riverBlue;
+    if (level->mainDry)
+        mainColor = BLANK; // Dry spine: the source emits nothing
+    int mainSource = AddRiverNode((Vector2){mainX, (float)screenHeight}, true, true, mainColor, -1);
     mainSourceIndex = mainSource;
 
     for (int i = 0; i < uniqueJunctionCount; i++)
     {
-        rivers[junctionNodes[i]].downstream = (i == 0)? mouth : junctionNodes[i - 1];
+        rivers[junctionNodes[i]].downstream = (i == 0) ? mouth : junctionNodes[i - 1];
     }
-    if (uniqueJunctionCount > 0) rivers[mainSource].downstream = junctionNodes[uniqueJunctionCount - 1];
-    else rivers[mainSource].downstream = mouth;
+    if (uniqueJunctionCount > 0)
+        rivers[mainSource].downstream = junctionNodes[uniqueJunctionCount - 1];
+    else
+        rivers[mainSource].downstream = mouth;
 
     // Side rivers enter their matching main-river junction. Each of the river's
     // doors becomes a dam node along the way, splitting it into sections that
@@ -785,22 +898,26 @@ static void BuildRivers(const LevelDef *level)
     for (int i = 0; i < level->sideRiverCount; i++)
     {
         int sortedJunction = FindJunctionY(junctionYs, uniqueJunctionCount, level->sideRivers[i].junctionY);
-        if (sortedJunction < 0) continue;
+        if (sortedJunction < 0)
+            continue;
 
         int junctionNode = junctionNodes[sortedJunction];
         int prev = AddRiverNode(level->sideRivers[i].source, false, true, level->sideRivers[i].sourceColor, i);
 
         // Walk this river's doors from the outermost (nearest the source) inward
-        bool used[MAX_LEVEL_DOORS] = { 0 };
+        bool used[MAX_LEVEL_DOORS] = {0};
         for (;;)
         {
             int next = -1;
             for (int d = 0; d < doorCount; d++)
             {
-                if ((doors[d].sideRiverIndex != i) || used[d]) continue;
-                if ((next < 0) || (level->doors[d].distFromMouth > level->doors[next].distFromMouth)) next = d;
+                if ((doors[d].sideRiverIndex != i) || used[d])
+                    continue;
+                if ((next < 0) || (level->doors[d].distFromMouth > level->doors[next].distFromMouth))
+                    next = d;
             }
-            if (next < 0) break;
+            if (next < 0)
+                break;
             used[next] = true;
 
             int damNode = AddRiverNode(DoorCenter(&doors[next]), false, false, BLANK, i);
@@ -812,15 +929,13 @@ static void BuildRivers(const LevelDef *level)
 
         if (junctionCount < MAX_JUNCTIONS)
         {
-            int lowerMainSegment = (sortedJunction + 1 < uniqueJunctionCount)?
-                junctionNodes[sortedJunction + 1] : mainSource;
+            int lowerMainSegment = (sortedJunction + 1 < uniqueJunctionCount) ? junctionNodes[sortedJunction + 1] : mainSource;
             junctions[junctionCount++] = (JunctionRender){
                 .position = rivers[junctionNode].position,
-                .sideDir = (level->sideRivers[i].source.x < mainX)? -1.0f : 1.0f,
+                .sideDir = (level->sideRivers[i].source.x < mainX) ? -1.0f : 1.0f,
                 .upperMainSegment = junctionNode,
                 .lowerMainSegment = lowerMainSegment,
-                .sideSegment = prev
-            };
+                .sideSegment = prev};
         }
     }
 
@@ -831,7 +946,7 @@ static void BuildRivers(const LevelDef *level)
     spellTimer = 0.0f;
     fizzleTimer = 0.0f;
     wandCharged = false;
-    wandColor = (Color){ 0 };
+    wandColor = (Color){0};
     wandFlashTimer = 0.0f;
     robotWantedColor = level->robotWantedColor;
     robotHappy = false;
@@ -851,7 +966,8 @@ static bool SameColor(Color a, Color b)
 // anything else falls back to an RGB average
 static Color MixWaterColors(Color a, Color b)
 {
-    if (SameColor(a, b)) return a;
+    if (SameColor(a, b))
+        return a;
 
     bool hasRed = SameColor(a, riverRed) || SameColor(b, riverRed);
     bool hasBlue = SameColor(a, riverBlue) || SameColor(b, riverBlue);
@@ -860,43 +976,54 @@ static Color MixWaterColors(Color a, Color b)
     bool hasOrange = SameColor(a, riverOrange) || SameColor(b, riverOrange);
     bool hasGreen = SameColor(a, riverGreen) || SameColor(b, riverGreen);
 
-    if (hasRed && hasBlue) return riverPurple;
-    if (hasRed && hasYellow) return riverOrange;
-    if (hasBlue && hasYellow) return riverGreen;
-    if (hasRed && hasOrange) return riverVermilion;
-    if (hasYellow && hasOrange) return riverAmber;
-    if (hasYellow && hasGreen) return riverChartreuse;
-    if (hasBlue && hasGreen) return riverTeal;
-    if (hasBlue && hasPurple) return riverViolet;
-    if (hasRed && hasPurple) return riverMagenta;
+    if (hasRed && hasBlue)
+        return riverPurple;
+    if (hasRed && hasYellow)
+        return riverOrange;
+    if (hasBlue && hasYellow)
+        return riverGreen;
+    if (hasRed && hasOrange)
+        return riverVermilion;
+    if (hasYellow && hasOrange)
+        return riverAmber;
+    if (hasYellow && hasGreen)
+        return riverChartreuse;
+    if (hasBlue && hasGreen)
+        return riverTeal;
+    if (hasBlue && hasPurple)
+        return riverViolet;
+    if (hasRed && hasPurple)
+        return riverMagenta;
 
-    return (Color){ (a.r + b.r)/2, (a.g + b.g)/2, (a.b + b.b)/2, 255 };
+    return (Color){(a.r + b.r) / 2, (a.g + b.g) / 2, (a.b + b.b) / 2, 255};
 }
 
 // Recompute steady-state color and flow of every node, processing in topological
 // order (each node only after all its upstream inputs are resolved)
 static void PropagateRiverColors(void)
 {
-    Color mixColor[MAX_RIVER_NODES] = { 0 };    // Folded mix of all inflow colors
-    bool hasColor[MAX_RIVER_NODES] = { 0 };
-    float inFlow[MAX_RIVER_NODES] = { 0 };
-    Color mainColor[MAX_RIVER_NODES] = { 0 };   // Color arriving from the main river, if any
-    float mainFlow[MAX_RIVER_NODES] = { 0 };
-    bool hasMain[MAX_RIVER_NODES] = { 0 };
-    int remaining[MAX_RIVER_NODES] = { 0 };
-    int queue[MAX_RIVER_NODES] = { 0 };
+    Color mixColor[MAX_RIVER_NODES] = {0}; // Folded mix of all inflow colors
+    bool hasColor[MAX_RIVER_NODES] = {0};
+    float inFlow[MAX_RIVER_NODES] = {0};
+    Color mainColor[MAX_RIVER_NODES] = {0}; // Color arriving from the main river, if any
+    float mainFlow[MAX_RIVER_NODES] = {0};
+    bool hasMain[MAX_RIVER_NODES] = {0};
+    int remaining[MAX_RIVER_NODES] = {0};
+    int queue[MAX_RIVER_NODES] = {0};
     int head = 0;
     int tail = 0;
 
     for (int i = 0; i < riverCount; i++)
     {
         int d = rivers[i].downstream;
-        if (d >= 0) remaining[d]++;
+        if (d >= 0)
+            remaining[d]++;
     }
 
     for (int i = 0; i < riverCount; i++)
     {
-        if (remaining[i] == 0) queue[tail++] = i;   // Sources are ready immediately
+        if (remaining[i] == 0)
+            queue[tail++] = i; // Sources are ready immediately
     }
 
     while (head < tail)
@@ -908,7 +1035,7 @@ static void PropagateRiverColors(void)
             rivers[i].color = rivers[i].sourceColor;
             // A colorless source is a dry channel: it pushes no water. Colored
             // sources always flow (closed doors block at the junction instead)
-            rivers[i].flow = (rivers[i].sourceColor.a != 0)? 1.0f : 0.0f;
+            rivers[i].flow = (rivers[i].sourceColor.a != 0) ? 1.0f : 0.0f;
         }
         else if (inFlow[i] > 0.0f)
         {
@@ -925,7 +1052,8 @@ static void PropagateRiverColors(void)
                 rivers[i].flow = mainFlow[i];
             }
         }
-        else rivers[i].flow = 0.0f;     // No inflow: dry channel
+        else
+            rivers[i].flow = 0.0f; // No inflow: dry channel
 
         int d = rivers[i].downstream;
         if (d >= 0)
@@ -938,7 +1066,7 @@ static void PropagateRiverColors(void)
             {
                 if (rivers[i].flow > 0.0f)
                 {
-                    mixColor[d] = hasColor[d]? MixWaterColors(mixColor[d], rivers[i].color) : rivers[i].color;
+                    mixColor[d] = hasColor[d] ? MixWaterColors(mixColor[d], rivers[i].color) : rivers[i].color;
                     hasColor[d] = true;
                 }
                 inFlow[d] += rivers[i].flow;
@@ -950,7 +1078,8 @@ static void PropagateRiverColors(void)
                 hasMain[d] = true;
             }
             remaining[d]--;
-            if (remaining[d] == 0) queue[tail++] = d;
+            if (remaining[d] == 0)
+                queue[tail++] = d;
         }
     }
 }
@@ -973,16 +1102,17 @@ static Color RiverNodeOutputColor(int i)
         // hard dry edge. Fully faded = BLANK = dry
         if ((i == mainSourceIndex) && MainDrained())
         {
-            float fade = 1.0f - (levelTime - mainDrainAt)/mainDrainFadeTime;
-            if (fade <= 0.0f) return BLANK;
+            float fade = 1.0f - (levelTime - mainDrainAt) / mainDrainFadeTime;
+            if (fade <= 0.0f)
+                return BLANK;
             Color c = rivers[i].sourceColor;
-            c.a = (unsigned char)(255.0f*fade);
+            c.a = (unsigned char)(255.0f * fade);
             return c;
         }
         return rivers[i].sourceColor;
     }
 
-    Color mixed = { 0 };
+    Color mixed = {0};
     bool hasColor = false;
     bool anyInflow = false;
     Color mainCol = rivers[i].color;
@@ -993,12 +1123,14 @@ static Color RiverNodeOutputColor(int i)
         if ((rivers[j].downstream == i) && (rivers[j].flow > 0.0f) && (rivers[j].sampleCount > 0))
         {
             // Dammed nodes contribute nothing until their door opens
-            if (NodeDammed(j)) continue;
+            if (NodeDammed(j))
+                continue;
             anyInflow = true;
 
-            Color c = rivers[j].samples[rivers[j].sampleCount - 1];     // Water arriving now
-            if (c.a == 0) continue;    // Refilling or drying: nothing arriving right now
-            mixed = hasColor? MixWaterColors(mixed, c) : c;
+            Color c = rivers[j].samples[rivers[j].sampleCount - 1]; // Water arriving now
+            if (c.a == 0)
+                continue; // Refilling or drying: nothing arriving right now
+            mixed = hasColor ? MixWaterColors(mixed, c) : c;
             hasColor = true;
             if (rivers[j].isMain)
             {
@@ -1010,8 +1142,10 @@ static Color RiverNodeOutputColor(int i)
 
     // Inflows exist but none carries water: pass the dryness along, so a dry
     // front travels THROUGH junctions instead of stalling at them
-    if (!hasColor) return anyInflow? BLANK : rivers[i].color;
-    if (!riversMerged && hasMain) return mainCol;   // Side inflows don't tint the main river yet
+    if (!hasColor)
+        return anyInflow ? BLANK : rivers[i].color;
+    if (!riversMerged && hasMain)
+        return mainCol; // Side inflows don't tint the main river yet
     return mixed;
 }
 
@@ -1027,7 +1161,8 @@ static bool ColorNear(Color a, Color b, int tol)
 // when the merged color front reaches the robot, not when R is pressed)
 static void UpdateRobotMood(void)
 {
-    if (robotHappy || !riversMerged) return;
+    if (robotHappy || !riversMerged)
+        return;
     if (ColorNear(RiverNodeOutputColor(riverMouthIndex), robotWantedColor, 10))
     {
         robotHappy = true;
@@ -1042,10 +1177,11 @@ static void DipWand(void)
     Color w = WaterColorAt(mainPlayerPosition);
     if (w.a != 0)
     {
-        w.a = 255;      // Shallow (drying) water still charges a full pigment
+        w.a = 255; // Shallow (drying) water still charges a full pigment
 
         // The crystal flashes when it picks up a NEW pigment
-        if (!wandCharged || !SameColor(w, wandColor)) {
+        if (!wandCharged || !SameColor(w, wandColor))
+        {
             wandFlashTimer = wandFlashTime;
             PlaySound(wandSound);
         }
@@ -1057,13 +1193,15 @@ static void DipWand(void)
 // R: cast at the nearest closed gate in range, honoring its color lock
 static void StartSpell(void)
 {
-    if (spellState != GATE_CLOSED) return;
+    if (spellState != GATE_CLOSED)
+        return;
 
     int targetDoor = -1;
     float targetDist = gateCastRadius;
     for (int i = 0; i < doorCount; i++)
     {
-        if (doors[i].open) continue;
+        if (doors[i].open)
+            continue;
         float dist = Vector2Distance(mainPlayerPosition, DoorCenter(&doors[i]));
         if (dist <= targetDist)
         {
@@ -1072,7 +1210,8 @@ static void StartSpell(void)
         }
     }
 
-    if (targetDoor < 0) return;
+    if (targetDoor < 0)
+        return;
 
     Door *door = &doors[targetDoor];
     if (!WandMatchesDoor(door))
@@ -1093,24 +1232,28 @@ static void StartSpell(void)
 // the rivers actually merge (this is where the old R-key merge code moved to)
 static void UpdateSpell(float dt)
 {
-    if (fizzleTimer > 0.0f) fizzleTimer -= dt;
-    if (wandFlashTimer > 0.0f) wandFlashTimer -= dt;
+    if (fizzleTimer > 0.0f)
+        fizzleTimer -= dt;
+    if (wandFlashTimer > 0.0f)
+        wandFlashTimer -= dt;
 
-    if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount)) return;
+    if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount))
+        return;
     Vector2 gatePosition = DoorCenter(&doors[spellTargetDoor]);
 
     if (spellState == SPELL_FLYING)
     {
         Vector2 toGate = Vector2Subtract(gatePosition, spellPos);
         float dist = Vector2Length(toGate);
-        float step = spellSpeed*dt;
+        float step = spellSpeed * dt;
         if (step >= dist)
         {
             spellPos = gatePosition;
             spellState = GATE_TRANSFORM;
             spellTimer = 0.0f;
         }
-        else spellPos = Vector2Add(spellPos, Vector2Scale(toGate, step/dist));
+        else
+            spellPos = Vector2Add(spellPos, Vector2Scale(toGate, step / dist));
     }
     else if (spellState == GATE_TRANSFORM)
     {
@@ -1121,7 +1264,7 @@ static void UpdateSpell(float dt)
             doors[spellTargetDoor].frogged = true;
             riversMerged = true;
             PropagateRiverColors();
-            spellState = GATE_CLOSED;   // Idle again: the witch can cast at the next gate
+            spellState = GATE_CLOSED; // Idle again: the witch can cast at the next gate
             spellTargetDoor = -1;
         }
     }
@@ -1131,27 +1274,39 @@ static void UpdateSpell(float dt)
 // samples one step downstream and inject each node's current output at the head
 static void UpdateRiverFlow(float dt)
 {
-    riverFlowAccum += RIVER_FLOW_SPEED*dt;
+    riverFlowAccum += RIVER_FLOW_SPEED * dt;
 
     while (riverFlowAccum >= RIVER_SAMPLE_SPACING)
     {
         riverFlowAccum -= RIVER_SAMPLE_SPACING;
 
         // Snapshot outputs first so a step moves water by exactly one sample
-        Color out[MAX_RIVER_NODES] = { 0 };
-        for (int i = 0; i < riverCount; i++) out[i] = RiverNodeOutputColor(i);
+        Color out[MAX_RIVER_NODES] = {0};
+        for (int i = 0; i < riverCount; i++)
+            out[i] = RiverNodeOutputColor(i);
 
         for (int i = 0; i < riverCount; i++)
         {
-            if (rivers[i].sampleCount <= 0) continue;
-            if (NodeDammed(i)) continue;    // Standing water behind a closed gate: frozen
-
-            for (int k = rivers[i].sampleCount - 1; k > 0; k--) rivers[i].samples[k] = rivers[i].samples[k - 1];
+            if (rivers[i].sampleCount <= 0)
+                continue;
+            if (NodeDammed(i))
+                continue; // Standing water behind a closed gate: frozen
 
             // A dye basin blends everything flowing through it with its base
             // color: yellow into a blue pool brews green, dammed or not
             Color inj = out[i];
-            if ((inj.a != 0) && rivers[i].isPool) inj = MixWaterColors(inj, rivers[i].standingColor);
+            if ((inj.a != 0) && rivers[i].isPool)
+                inj = MixWaterColors(inj, rivers[i].standingColor);
+
+            // Nothing coming in (a gate upstream is shut) and the exit gate is
+            // shut too: the standing water has nowhere to go. Without this it
+            // would slowly drain INTO the closed exit and turn transparent
+            int d = rivers[i].downstream;
+            if ((inj.a == 0) && (d >= 0) && NodeDammed(d))
+                continue;
+
+            for (int k = rivers[i].sampleCount - 1; k > 0; k--)
+                rivers[i].samples[k] = rivers[i].samples[k - 1];
             rivers[i].samples[0] = inj;
         }
     }
@@ -1164,14 +1319,16 @@ static float SegmentDistance(Vector2 p, Vector2 a, Vector2 b, float *tOut)
 {
     float abx = b.x - a.x;
     float aby = b.y - a.y;
-    float len2 = abx*abx + aby*aby;
-    float t = ((p.x - a.x)*abx + (p.y - a.y)*aby)/len2;
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
-    float cx = a.x + abx*t;
-    float cy = a.y + aby*t;
+    float len2 = abx * abx + aby * aby;
+    float t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
+    if (t < 0.0f)
+        t = 0.0f;
+    if (t > 1.0f)
+        t = 1.0f;
+    float cx = a.x + abx * t;
+    float cy = a.y + aby * t;
     *tOut = t;
-    return sqrtf((p.x - cx)*(p.x - cx) + (p.y - cy)*(p.y - cy));
+    return sqrtf((p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy));
 }
 
 // Distance from a point to the nearest river centerline segment. Used as the
@@ -1182,10 +1339,12 @@ static float RiverDistance(Vector2 p)
     for (int i = 0; i < riverCount; i++)
     {
         int ds = rivers[i].downstream;
-        if (ds < 0) continue;
+        if (ds < 0)
+            continue;
         float t = 0.0f;
         float d = SegmentDistance(p, rivers[i].position, rivers[ds].position, &t);
-        if (d < best) best = d;
+        if (d < best)
+            best = d;
     }
     return best;
 }
@@ -1199,38 +1358,46 @@ static Color WaterColorAt(Vector2 p)
     for (int i = 0; i < riverCount; i++)
     {
         int ds = rivers[i].downstream;
-        if (ds < 0) continue;
+        if (ds < 0)
+            continue;
         float t = 0.0f;
         float d = SegmentDistance(p, rivers[i].position, rivers[ds].position, &t);
-        if (d < best) { best = d; bestT = t; bestSeg = i; }
+        if (d < best)
+        {
+            best = d;
+            bestT = t;
+            bestSeg = i;
+        }
     }
-    if ((bestSeg < 0) || (best > channelHalfWidth)) return BLANK;
-    if (rivers[bestSeg].sampleCount <= 0) return BLANK;
+    if ((bestSeg < 0) || (best > channelHalfWidth))
+        return BLANK;
+    if (rivers[bestSeg].sampleCount <= 0)
+        return BLANK;
 
-    int k = (int)(bestT*(rivers[bestSeg].sampleCount - 1));
-    return rivers[bestSeg].samples[k];  // Dry channels read as BLANK naturally
+    int k = (int)(bestT * (rivers[bestSeg].sampleCount - 1));
+    return rivers[bestSeg].samples[k]; // Dry channels read as BLANK naturally
 }
-
 
 /* Return c lightened 35% toward white, with full opacity. */
 static Color WaterLight(Color c)
 {
-    return (Color){ c.r + (255 - c.r)*35/100, c.g + (255 - c.g)*35/100, c.b + (255 - c.b)*35/100, 255 };
+    return (Color){c.r + (255 - c.r) * 35 / 100, c.g + (255 - c.g) * 35 / 100, c.b + (255 - c.b) * 35 / 100, 255};
 }
 
 static Color WandCrystalColor(void)
 {
-    Color inactive = { 208, 214, 224, 255 };
-    if (wandFlashTimer > 0.0f) return WaterLight(WaterLight(wandCharged? wandColor : inactive));
-    if (wandCharged) return WaterLight(wandColor);
+    Color inactive = {208, 214, 224, 255};
+    if (wandFlashTimer > 0.0f)
+        return WaterLight(WaterLight(wandCharged ? wandColor : inactive));
+    if (wandCharged)
+        return WaterLight(wandColor);
     return inactive;
 }
-
 
 /* Return c darkened to 72% brightness, with full opacity. */
 static Color WaterDark(Color c)
 {
-    return (Color){ c.r*72/100, c.g*72/100, c.b*72/100, 255 };
+    return (Color){c.r * 72 / 100, c.g * 72 / 100, c.b * 72 / 100, 255};
 }
 
 // Does the wand pigment satisfy a door's color lock? Colorless doors (alpha 0)
@@ -1239,8 +1406,10 @@ static Color WaterDark(Color c)
 // display shade of its color in case a dip ever captures that variant
 static bool WandMatchesDoor(const Door *door)
 {
-    if (door->requiresWandColor.a == 0) return true;
-    if (!wandCharged) return false;
+    if (door->requiresWandColor.a == 0)
+        return true;
+    if (!wandCharged)
+        return false;
     return ColorNear(wandColor, door->requiresWandColor, 12) ||
            ColorNear(wandColor, WaterLight(door->requiresWandColor), 12);
 }
@@ -1253,7 +1422,7 @@ static void RenderRiverPixels(float time)
     {
         for (int px = 0; px < RIVER_RES; px++)
         {
-            Vector2 p = { (px + 0.5f)*RIVER_PIXEL, (py + 0.5f)*RIVER_PIXEL };
+            Vector2 p = {(px + 0.5f) * RIVER_PIXEL, (py + 0.5f) * RIVER_PIXEL};
 
             // Nearest and second-nearest segments (second one is for the chamfer)
             float best = 1e9f, second = 1e9f, bestT = 0.0f;
@@ -1261,16 +1430,25 @@ static void RenderRiverPixels(float time)
             for (int i = 0; i < riverCount; i++)
             {
                 int ds = rivers[i].downstream;
-                if (ds < 0) continue;
+                if (ds < 0)
+                    continue;
                 float t = 0.0f;
                 float dd = SegmentDistance(p, rivers[i].position, rivers[ds].position, &t);
-                if (dd < best) { second = best; best = dd; bestSeg = i; bestT = t; }
-                else if (dd < second) second = dd;
+                if (dd < best)
+                {
+                    second = best;
+                    best = dd;
+                    bestSeg = i;
+                    bestT = t;
+                }
+                else if (dd < second)
+                    second = dd;
             }
 
             float d = best;
-            float chamfered = (best + second - cornerChamfer)*0.7071f;  // 45-degree corner cut
-            if (chamfered < d) d = chamfered;
+            float chamfered = (best + second - cornerChamfer) * 0.7071f; // 45-degree corner cut
+            if (chamfered < d)
+                d = chamfered;
 
             Color out;
             if ((bestSeg >= 0) && (d <= channelHalfWidth + slopeWidth + rimWidth + 11.0f))
@@ -1278,8 +1456,8 @@ static void RenderRiverPixels(float time)
                 RiverNode *seg = &rivers[bestSeg];
                 Vector2 a = seg->position;
                 Vector2 bp = rivers[seg->downstream].position;
-                float segLen = sqrtf((bp.x - a.x)*(bp.x - a.x) + (bp.y - a.y)*(bp.y - a.y));
-                float along = bestT*segLen;
+                float segLen = sqrtf((bp.x - a.x) * (bp.x - a.x) + (bp.y - a.y) * (bp.y - a.y));
+                float along = bestT * segLen;
 
                 if (d <= channelHalfWidth)
                 {
@@ -1290,7 +1468,7 @@ static void RenderRiverPixels(float time)
                     // entering water being swept upward by the main flow
                     int waterSeg = bestSeg;
                     float waterT = bestT;
-                    float mainX = (float)screenWidth/2;
+                    float mainX = (float)screenWidth / 2;
 
                     if ((fabsf(p.x - mainX) <= channelHalfWidth) && (junctionCount > 0))
                     {
@@ -1312,21 +1490,24 @@ static void RenderRiverPixels(float time)
                         // Several side rivers may share one junction (same y), so take
                         // the highest boundary among the co-located mouths - each
                         // entering river sweeps upward from its own bank
-                        float arcR = 2.0f*channelHalfWidth;
+                        float arcR = 2.0f * channelHalfWidth;
                         float boundaryY = junction->position.y + channelHalfWidth - arcR;
                         for (int j = 0; j < junctionCount; j++)
                         {
-                            if (fabsf(junctions[j].position.y - junction->position.y) > 1.0f) continue;
-                            float sideBankX = junctions[j].position.x + junctions[j].sideDir*channelHalfWidth;
-                            float ax = (p.x - sideBankX)*-junctions[j].sideDir;
+                            if (fabsf(junctions[j].position.y - junction->position.y) > 1.0f)
+                                continue;
+                            float sideBankX = junctions[j].position.x + junctions[j].sideDir * channelHalfWidth;
+                            float ax = (p.x - sideBankX) * -junctions[j].sideDir;
                             float bY = junctions[j].position.y + channelHalfWidth - arcR;
-                            if ((ax >= 0.0f) && (ax < arcR)) bY += sqrtf(arcR*arcR - ax*ax);
-                            if (bY > boundaryY) boundaryY = bY;
+                            if ((ax >= 0.0f) && (ax < arcR))
+                                bY += sqrtf(arcR * arcR - ax * ax);
+                            if (bY > boundaryY)
+                                boundaryY = bY;
                         }
 
                         // Ordered-dither blend across a band instead of a hard edge
-                        float blend = (boundaryY - p.y)/24.0f + 0.5f;   // 1 = merged side, 0 = upstream
-                        waterSeg = (blend > bayer4[py & 3][px & 3])? junction->upperMainSegment : junction->lowerMainSegment;
+                        float blend = (boundaryY - p.y) / 24.0f + 0.5f; // 1 = merged side, 0 = upstream
+                        waterSeg = (blend > bayer4[py & 3][px & 3]) ? junction->upperMainSegment : junction->lowerMainSegment;
                         SegmentDistance(p, rivers[waterSeg].position,
                                         rivers[rivers[waterSeg].downstream].position, &waterT);
                     }
@@ -1334,8 +1515,8 @@ static void RenderRiverPixels(float time)
                     RiverNode *wseg = &rivers[waterSeg];
                     Vector2 wa = wseg->position;
                     Vector2 wb = rivers[wseg->downstream].position;
-                    float wLen = sqrtf((wb.x - wa.x)*(wb.x - wa.x) + (wb.y - wa.y)*(wb.y - wa.y));
-                    float wAlong = waterT*wLen;
+                    float wLen = sqrtf((wb.x - wa.x) * (wb.x - wa.x) + (wb.y - wa.y) * (wb.y - wa.y));
+                    float wAlong = waterT * wLen;
 
                     // Water color comes from the advected samples along the segment
                     int count = wseg->sampleCount;
@@ -1344,10 +1525,12 @@ static void RenderRiverPixels(float time)
                     {
                         // Ordered dither spreads each sample boundary over ~2 samples,
                         // so the traveling color front has a soft blended edge
-                        float kf = waterT*(count - 1) + bayer4[py & 3][px & 3]*2.0f - 0.5f;
+                        float kf = waterT * (count - 1) + bayer4[py & 3][px & 3] * 2.0f - 0.5f;
                         int k = (int)kf;
-                        if (k < 0) k = 0;
-                        if (k > count - 1) k = count - 1;
+                        if (k < 0)
+                            k = 0;
+                        if (k > count - 1)
+                            k = count - 1;
                         w = wseg->samples[k];
                     }
 
@@ -1355,60 +1538,73 @@ static void RenderRiverPixels(float time)
                     // shallow (drying) water that pulls back from the banks,
                     // 0 = dry bed. Draining rivers taper off instead of ending
                     // in a hard edge
-                    float depth = w.a/255.0f;
-                    float waterHalf = channelHalfWidth*(0.30f + 0.70f*depth);
+                    float depth = w.a / 255.0f;
+                    float waterHalf = channelHalfWidth * (0.30f + 0.70f * depth);
 
-                    if ((wseg->flow <= 0.0f) || (w.a == 0) || (d > waterHalf))
+                    // Wetness comes from the SAMPLES, not the steady flow: a pool
+                    // sealed behind closed doors has flow 0 but is still full of
+                    // standing water (alpha 0 samples = genuinely dry riverbed)
+                    if ((w.a == 0) || (d > waterHalf))
                     {
-                        // Dry bed: no flow, water not arrived yet, or receded banks
-                        out = (d > channelHalfWidth - 9.0f)? metalRamp[1] : metalRamp[2];
+                        // Dry bed: water not arrived yet, or receded banks
+                        out = (d > channelHalfWidth - 9.0f) ? metalRamp[1] : metalRamp[2];
                     }
                     else
                     {
                         w.a = 255;
                         // Flow streaks moving downstream
-                        float sp = fmodf(wAlong - time*RIVER_FLOW_SPEED, 90.0f);
-                        if (sp < 0.0f) sp += 90.0f;
-                        if ((sp < 15.0f) && (d < waterHalf - 16.0f) && (((px*7 + py*3)%5) < 3)) w = WaterLight(w);
-                        if (d > waterHalf - 9.0f) w = WaterDark(w);     // Waterline edge
+                        float sp = fmodf(wAlong - time * RIVER_FLOW_SPEED, 90.0f);
+                        if (sp < 0.0f)
+                            sp += 90.0f;
+                        if ((sp < 15.0f) && (d < waterHalf - 16.0f) && (((px * 7 + py * 3) % 5) < 3))
+                            w = WaterLight(w);
+                        if (d > waterHalf - 9.0f)
+                            w = WaterDark(w); // Waterline edge
                         out = w;
                     }
                 }
                 else if (d <= channelHalfWidth + slopeWidth)
                 {
                     // Angled bank: gradient down to the water, directional light, hatch ridges
-                    Vector2 cpx = { a.x + (bp.x - a.x)*bestT, a.y + (bp.y - a.y)*bestT };
-                    float ox = (p.x - cpx.x)/best;
-                    float oy = (p.y - cpx.y)/best;
-                    float lit = ox*-0.7071f + oy*-0.7071f;              // Sun from top-left
-                    int dirShade = (lit > 0.25f)? -1 : (lit < -0.25f)? 1 : 0;
+                    Vector2 cpx = {a.x + (bp.x - a.x) * bestT, a.y + (bp.y - a.y) * bestT};
+                    float ox = (p.x - cpx.x) / best;
+                    float oy = (p.y - cpx.y) / best;
+                    float lit = ox * -0.7071f + oy * -0.7071f; // Sun from top-left
+                    int dirShade = (lit > 0.25f) ? -1 : (lit < -0.25f) ? 1
+                                                                       : 0;
 
-                    float gd = (d - channelHalfWidth)/slopeWidth;
-                    int idx = 3 + (int)(gd*2.0f + 0.5f) + dirShade;
+                    float gd = (d - channelHalfWidth) / slopeWidth;
+                    int idx = 3 + (int)(gd * 2.0f + 0.5f) + dirShade;
                     float hatch = fmodf(along, 75.0f);
-                    if (hatch < 0.0f) hatch += 75.0f;
-                    if (hatch < 10.0f) idx -= 1;
-                    if (idx < 1) idx = 1;
-                    if (idx > 6) idx = 6;
+                    if (hatch < 0.0f)
+                        hatch += 75.0f;
+                    if (hatch < 10.0f)
+                        idx -= 1;
+                    if (idx < 1)
+                        idx = 1;
+                    if (idx > 6)
+                        idx = 6;
                     out = metalRamp[idx];
                 }
                 else if (d <= channelHalfWidth + slopeWidth + rimWidth)
                 {
                     // Flat top rim, with a darker seam where it meets the slope
-                    out = (d < channelHalfWidth + slopeWidth + 6.0f)? metalRamp[4] : metalRamp[6];
+                    out = (d < channelHalfWidth + slopeWidth + 6.0f) ? metalRamp[4] : metalRamp[6];
                 }
-                else out = metalRamp[1];    // Outer outline
+                else
+                    out = metalRamp[1]; // Outer outline
             }
             else
             {
                 // Floor: checkered tiles with sparse noise
-                int tx = (int)(p.x/48.0f);
-                int ty = (int)(p.y/48.0f);
-                out = ((tx + ty) & 1)? floorDark : floorMid;
-                if (((px*13 + py*29)%41) == 0) out = floorNoise;
+                int tx = (int)(p.x / 48.0f);
+                int ty = (int)(p.y / 48.0f);
+                out = ((tx + ty) & 1) ? floorDark : floorMid;
+                if (((px * 13 + py * 29) % 41) == 0)
+                    out = floorNoise;
             }
 
-            riverPixels[py*RIVER_RES + px] = out;
+            riverPixels[py * RIVER_RES + px] = out;
         }
     }
 }
@@ -1422,8 +1618,9 @@ static void UpdateDrawTitle(void)
 
     // Typewriter progress; total character count of the story
     int totalChars = 0;
-    for (int i = 0; i < STORY_LINE_COUNT; i++) totalChars += (int)strlen(storyLines[i]);
-    storyCharsShown += GetFrameTime()*storyCharsPerSecond;
+    for (int i = 0; i < STORY_LINE_COUNT; i++)
+        totalChars += (int)strlen(storyLines[i]);
+    storyCharsShown += GetFrameTime() * storyCharsPerSecond;
     bool storyDone = (storyCharsShown >= totalChars);
 
     // ENTER starts the game once the story is out; any key first fast-forwards it
@@ -1434,100 +1631,243 @@ static void UpdateDrawTitle(void)
         PlayMusicStream(backgroundMusic);
         return;
     }
-    if ((GetKeyPressed() != 0) && !storyDone) storyCharsShown = (float)totalChars;
+    if ((GetKeyPressed() != 0) && !storyDone)
+        storyCharsShown = (float)totalChars;
 
     // raylib logo animation: classic four states at half scale
     logoFrames++;
     if (logoState == 0)
     {
-        if (logoFrames >= 60) { logoState = 1; logoFrames = 0; }
+        if (logoFrames >= 60)
+        {
+            logoState = 1;
+            logoFrames = 0;
+        }
     }
     else if (logoState == 1)
     {
-        logoTopW += 2; logoLeftH += 2;
-        if (logoTopW >= LOGO_SIZE) { logoState = 2; logoFrames = 0; }
+        logoTopW += 2;
+        logoLeftH += 2;
+        if (logoTopW >= LOGO_SIZE)
+        {
+            logoState = 2;
+            logoFrames = 0;
+        }
     }
     else if (logoState == 2)
     {
-        logoBottomW += 2; logoRightH += 2;
-        if (logoBottomW >= LOGO_SIZE) { logoState = 3; logoFrames = 0; }
+        logoBottomW += 2;
+        logoRightH += 2;
+        if (logoBottomW >= LOGO_SIZE)
+        {
+            logoState = 3;
+            logoFrames = 0;
+        }
     }
-    else if ((logoLetters < 6) && (logoFrames%10 == 0)) logoLetters++;
+    else if ((logoLetters < 6) && (logoFrames % 10 == 0))
+        logoLetters++;
 
     BeginDrawing();
-        ClearBackground((Color){ 24, 26, 31, 255 });
+    ClearBackground((Color){24, 26, 31, 255});
 
-        // Title
-        const char *title = "SAVE THE SHINJI";
-        DrawText(title, (screenWidth - MeasureText(title, 44))/2, 64, 44, RAYWHITE);
+    // Title
+    const char *title = "SAVE THE SHINJI";
+    DrawText(title, (screenWidth - MeasureText(title, 44)) / 2, 64, 44, RAYWHITE);
 
-        // Sad Shinji, bobbing gently
-        Vector2 robotPos = { (float)screenWidth/2, 216 + sinf(t*1.6f)*RIVER_PIXEL };
-        DrawSadRobot(robotPos, RIVER_PIXEL);
+    // Sad Shinji, bobbing gently
+    Vector2 robotPos = {(float)screenWidth / 2, 216 + sinf(t * 1.6f) * RIVER_PIXEL};
+    DrawSadRobot(robotPos, RIVER_PIXEL);
 
-        // Story, revealed character by character. Each line is centered at its
-        // final position so the text doesn't shift while typing
-        int budget = (int)storyCharsShown;
-        int y = 370;
-        for (int i = 0; i < STORY_LINE_COUNT; i++)
+    // Story, revealed character by character. Each line is centered at its
+    // final position so the text doesn't shift while typing
+    int budget = (int)storyCharsShown;
+    int y = 370;
+    for (int i = 0; i < STORY_LINE_COUNT; i++)
+    {
+        int len = (int)strlen(storyLines[i]);
+        int show = (budget < len) ? budget : len;
+        budget -= show;
+        if (show > 0)
         {
-            int len = (int)strlen(storyLines[i]);
-            int show = (budget < len)? budget : len;
-            budget -= show;
-            if (show > 0)
-            {
-                int x = (screenWidth - MeasureText(storyLines[i], 20))/2;
-                DrawText(TextSubtext(storyLines[i], 0, show), x, y, 20, (Color){ 201, 209, 218, 255 });
-            }
-            y += (len == 0)? 14 : 28;
+            int x = (screenWidth - MeasureText(storyLines[i], 20)) / 2;
+            DrawText(TextSubtext(storyLines[i], 0, show), x, y, 20, (Color){201, 209, 218, 255});
         }
+        y += (len == 0) ? 14 : 28;
+    }
 
-        // Blinking prompt once the story is fully out
-        if (storyDone && (((int)(t*2.0f))%2 == 0))
-        {
-            const char *prompt = "- Press ENTER -";
-            DrawText(prompt, (screenWidth - MeasureText(prompt, 24))/2, 620, 24, YELLOW);
-        }
+    // Blinking prompt once the story is fully out
+    if (storyDone && (((int)(t * 2.0f)) % 2 == 0))
+    {
+        const char *prompt = "- Press ENTER -";
+        DrawText(prompt, (screenWidth - MeasureText(prompt, 24)) / 2, 620, 24, YELLOW);
+    }
 
-        // raylib logo badge, bottom-right
-        int lx = screenWidth - LOGO_SIZE - 24;
-        int ly = screenHeight - LOGO_SIZE - 24;
-        if (logoState == 0)
+    // raylib logo badge, bottom-right
+    int lx = screenWidth - LOGO_SIZE - 24;
+    int ly = screenHeight - LOGO_SIZE - 24;
+    if (logoState == 0)
+    {
+        if ((logoFrames / 10) % 2 == 0)
+            DrawRectangle(lx, ly, LOGO_BORDER * 2, LOGO_BORDER * 2, RAYWHITE);
+    }
+    else
+    {
+        DrawRectangle(lx, ly, logoTopW, LOGO_BORDER, RAYWHITE);
+        DrawRectangle(lx, ly, LOGO_BORDER, logoLeftH, RAYWHITE);
+        if (logoState >= 2)
         {
-            if ((logoFrames/10)%2 == 0)
-                DrawRectangle(lx, ly, LOGO_BORDER*2, LOGO_BORDER*2, RAYWHITE);
+            DrawRectangle(lx + LOGO_SIZE - LOGO_BORDER, ly, LOGO_BORDER, logoRightH, RAYWHITE);
+            DrawRectangle(lx, ly + LOGO_SIZE - LOGO_BORDER, logoBottomW, LOGO_BORDER, RAYWHITE);
         }
-        else
-        {
-            DrawRectangle(lx, ly, logoTopW, LOGO_BORDER, RAYWHITE);
-            DrawRectangle(lx, ly, LOGO_BORDER, logoLeftH, RAYWHITE);
-            if (logoState >= 2)
-            {
-                DrawRectangle(lx + LOGO_SIZE - LOGO_BORDER, ly, LOGO_BORDER, logoRightH, RAYWHITE);
-                DrawRectangle(lx, ly + LOGO_SIZE - LOGO_BORDER, logoBottomW, LOGO_BORDER, RAYWHITE);
-            }
-            if (logoState >= 3)
-                DrawText(TextSubtext("raylib", 0, logoLetters), lx + 42, ly + 88, 25, RAYWHITE);
-        }
+        if (logoState >= 3)
+            DrawText(TextSubtext("raylib", 0, logoLetters), lx + 42, ly + 88, 25, RAYWHITE);
+    }
 
     EndDrawing();
 }
+
+//--------------------------------------------------------------------------------------------
+// Ending screen
+//--------------------------------------------------------------------------------------------
+static void UpdateDrawEnding(void)
+{
+    float t = (float)GetTime();
+    float dt = GetFrameTime();
+
+    // Typewriter for the closing lines; ENTER fast-forwards, then returns to title
+    int totalChars = 0;
+    for (int i = 0; i < ENDING_LINE_COUNT; i++)
+        totalChars += (int)strlen(endingLines[i]);
+    endingCharsShown += dt * storyCharsPerSecond;
+    bool textDone = (endingCharsShown >= totalChars);
+
+    if (IsKeyPressed(KEY_ENTER) && textDone)
+    {
+        // Back to the title screen: replay the story, rewind the logo, reset
+        // the game. No early return: the frame draws and ends normally so the
+        // input state rolls over cleanly before the title screen takes over
+        currentScreen = SCREEN_TITLE;
+        storyCharsShown = 0.0f;
+        logoState = 0;
+        logoFrames = 0;
+        logoLetters = 0;
+        logoTopW = LOGO_BORDER;
+        logoLeftH = LOGO_BORDER;
+        logoBottomW = LOGO_BORDER;
+        logoRightH = LOGO_BORDER;
+        LoadLevel(0);
+        while (GetKeyPressed() != 0)
+        {
+        } // Don't let this ENTER skip the story
+    }
+    else if ((GetKeyPressed() != 0) && !textDone)
+        endingCharsShown = (float)totalChars;
+
+    // Confetti falls in the colors the player brewed
+    for (int i = 0; i < CONFETTI_COUNT; i++)
+    {
+        confettiPos[i].y += confettiSpeed[i] * dt;
+        confettiPos[i].x += sinf(t * 2.0f + (float)i) * 0.4f;
+        if (confettiPos[i].y > screenHeight + 12)
+        {
+            confettiPos[i].y = -12;
+            confettiPos[i].x = (float)GetRandomValue(0, screenWidth);
+        }
+    }
+
+    BeginDrawing();
+    ClearBackground((Color){24, 26, 31, 255});
+
+    // Title cycling through the earned palette
+    const char *title = "CONGRATULATIONS!";
+    Color titleColor = endingPalette[((int)(t * 1.5f)) % ENDING_PALETTE_COUNT];
+    DrawText(title, (screenWidth - MeasureText(title, 44)) / 2, 64, 44, titleColor);
+
+    // Happy Shinji, bobbing, antenna ball blinking fast
+    Vector2 robotPos = {(float)screenWidth / 2, 216 + sinf(t * 1.6f) * RIVER_PIXEL};
+    DrawSprite(robotSpriteHappy, ROBOT_W, ROBOT_H, robotPos, false, false);
+    if (((int)(t * 6.0f)) % 2 == 0)
+    {
+        int left = (int)roundf(robotPos.x / RIVER_PIXEL) - ROBOT_W / 2;
+        int top = (int)roundf(robotPos.y / RIVER_PIXEL) - ROBOT_H / 2;
+        DrawRectangle((int)((left + 30) * RIVER_PIXEL), (int)(top * RIVER_PIXEL),
+                      (int)(3 * RIVER_PIXEL), (int)(3 * RIVER_PIXEL), (Color){240, 224, 138, 255});
+    }
+
+    // The witch and the frog take their bow
+    Vector2 witchPos = {270, 370 + sinf(t * 5.0f) * 4.0f};
+    DrawWitch(witchPos, false);
+    Vector2 frogPos = {450, 384 + ((((int)(t * 2.0f)) % 2 == 0) ? 0.0f : -RIVER_PIXEL)};
+    const char **frame = (((int)(t * 2.0f)) % 2 == 0) ? frogSprite1 : frogSprite2;
+    DrawSprite(frame, FROG_W, FROG_H, frogPos, false, false);
+
+    // Rainbow river: every brewed color drifting by in one channel
+    int bandTop = 74; // Low-res rows: outline, dark edge, water, dark edge, outline
+    for (int cx = 0; cx < RIVER_RES; cx++)
+    {
+        int slot = ((cx + (int)(t * 6.0f)) / 12) % ENDING_PALETTE_COUNT;
+        Color w = endingPalette[slot];
+        Color rows[5] = {metalRamp[1], WaterDark(w), w, WaterDark(w), metalRamp[1]};
+        // Sparse moving highlights on the middle row
+        if (((cx * 7 + slot * 3) % 9) == ((int)(t * 8.0f)) % 9)
+            rows[2] = WaterLight(w);
+        for (int r = 0; r < 5; r++)
+            DrawRectangle((int)(cx * RIVER_PIXEL), (int)((bandTop + r) * RIVER_PIXEL),
+                          (int)RIVER_PIXEL, (int)RIVER_PIXEL, rows[r]);
+    }
+
+    // Closing lines, centered at their final position while typing
+    int budget = (int)endingCharsShown;
+    int y = 530;
+    for (int i = 0; i < ENDING_LINE_COUNT; i++)
+    {
+        int len = (int)strlen(endingLines[i]);
+        int show = (budget < len) ? budget : len;
+        budget -= show;
+        if (show > 0)
+        {
+            int x = (screenWidth - MeasureText(endingLines[i], 22)) / 2;
+            DrawText(TextSubtext(endingLines[i], 0, show), x, y, 22, (Color){201, 209, 218, 255});
+        }
+        y += 34;
+    }
+
+    if (textDone && (((int)(t * 2.0f)) % 2 == 0))
+    {
+        const char *prompt = "- Press ENTER -";
+        DrawText(prompt, (screenWidth - MeasureText(prompt, 24)) / 2, 640, 24, YELLOW);
+    }
+
+    // Confetti on top of everything, snapped to the pixel grid
+    for (int i = 0; i < CONFETTI_COUNT; i++)
+    {
+        int bx = (int)roundf(confettiPos[i].x / RIVER_PIXEL);
+        int by = (int)roundf(confettiPos[i].y / RIVER_PIXEL);
+        DrawRectangle((int)(bx * RIVER_PIXEL), (int)(by * RIVER_PIXEL),
+                      (int)RIVER_PIXEL, (int)RIVER_PIXEL, confettiColor[i]);
+    }
+
+    EndDrawing();
+}
+
+#include "restart_spinner.inc"
 
 // Draw a gate with its bars in the given color: metal for plain gates, the lock
 // color for color-locked ones (the whole door shows what wand it wants)
 static void DrawGate(Vector2 worldPos, Color barColor)
 {
-    int left = (int)roundf(worldPos.x/RIVER_PIXEL) - GATE_W/2;
-    int top = (int)roundf(worldPos.y/RIVER_PIXEL) - GATE_H/2;
+    int left = (int)roundf(worldPos.x / RIVER_PIXEL) - GATE_W / 2;
+    int top = (int)roundf(worldPos.y / RIVER_PIXEL) - GATE_H / 2;
 
     for (int y = 0; y < GATE_H; y++)
     {
         for (int x = 0; x < GATE_W; x++)
         {
             char c = gateSprite[y][x];
-            if (c == '.') continue;
-            Color col = (c == 'M')? barColor : PixelSpriteColor(c, (Color){ 0 });
-            DrawRectangle((int)((left + x)*RIVER_PIXEL), (int)((top + y)*RIVER_PIXEL),
+            if (c == '.')
+                continue;
+            Color col = (c == 'M') ? barColor : PixelSpriteColor(c, (Color){0});
+            DrawRectangle((int)((left + x) * RIVER_PIXEL), (int)((top + y) * RIVER_PIXEL),
                           (int)RIVER_PIXEL, (int)RIVER_PIXEL, col);
         }
     }
@@ -1536,7 +1876,7 @@ static void DrawGate(Vector2 worldPos, Color barColor)
 // Color a gate's bars should show: its lock color, or plain metal when unlocked
 static Color GateBarColor(const Door *door)
 {
-    return (door->requiresWandColor.a != 0)? door->requiresWandColor : PixelSpriteColor('M', (Color){ 0 });
+    return (door->requiresWandColor.a != 0) ? door->requiresWandColor : PixelSpriteColor('M', (Color){0});
 }
 
 // Gates / spark / poof / frogs, drawn on the same low-res pixel grid as the scene
@@ -1552,7 +1892,8 @@ static void DrawSpellScene(void)
         if (!doors[i].open)
         {
             // The transform effect draws the target gate itself (lingering half-poof)
-            if ((spellState == GATE_TRANSFORM) && (i == spellTargetDoor)) continue;
+            if ((spellState == GATE_TRANSFORM) && (i == spellTargetDoor))
+                continue;
 
             // Color-locked gates are painted entirely in their lock color
             DrawGate(doorPosition, GateBarColor(&doors[i]));
@@ -1564,62 +1905,64 @@ static void DrawSpellScene(void)
             if ((spellState == GATE_CLOSED) &&
                 CheckCollisionCircleRec(mainPlayerPosition, interactionRadius, doors[i].rect))
             {
-                Color outline = WandMatchesDoor(&doors[i])? RAYWHITE : (Color){ 230, 60, 48, 255 };
-                int left = (int)roundf(doorPosition.x/RIVER_PIXEL) - GATE_W/2;
-                int top = (int)roundf(doorPosition.y/RIVER_PIXEL) - GATE_H/2;
+                Color outline = WandMatchesDoor(&doors[i]) ? RAYWHITE : (Color){230, 60, 48, 255};
+                int left = (int)roundf(doorPosition.x / RIVER_PIXEL) - GATE_W / 2;
+                int top = (int)roundf(doorPosition.y / RIVER_PIXEL) - GATE_H / 2;
                 DrawRectangleLinesEx((Rectangle){
-                        (left - 1)*RIVER_PIXEL, (top - 1)*RIVER_PIXEL,
-                        (GATE_W + 2)*RIVER_PIXEL, (GATE_H + 2)*RIVER_PIXEL },
-                    RIVER_PIXEL, outline);
+                                         (left - 1) * RIVER_PIXEL, (top - 1) * RIVER_PIXEL,
+                                         (GATE_W + 2) * RIVER_PIXEL, (GATE_H + 2) * RIVER_PIXEL},
+                                     RIVER_PIXEL, outline);
             }
         }
         else if (doors[i].frogged)
         {
-            const char **frame = (((int)(t*2.0f))%2 == 0)? frogSprite1 : frogSprite2;
+            const char **frame = (((int)(t * 2.0f)) % 2 == 0) ? frogSprite1 : frogSprite2;
             DrawPixelSprite(frame, FROG_W, FROG_H, doorPosition, false, false,
-                            RIVER_PIXEL, (Color){ 0 });
+                            RIVER_PIXEL, (Color){0});
         }
     }
 
     // Fizzle: a fading gray puff where a locked gate rejected the spell
     if (fizzleTimer > 0.0f)
     {
-        unsigned char a = (unsigned char)(255*fizzleTimer/fizzleTime);
-        Color gray = { 120, 120, 130, a };
+        unsigned char a = (unsigned char)(255 * fizzleTimer / fizzleTime);
+        Color gray = {120, 120, 130, a};
         DrawRectangle((int)(fizzlePos.x - 9), (int)(fizzlePos.y - 9), 18, 18, gray);
         DrawRectangle((int)(fizzlePos.x - 21), (int)(fizzlePos.y - 3), 6, 6, gray);
         DrawRectangle((int)(fizzlePos.x + 15), (int)(fizzlePos.y - 3), 6, 6, gray);
     }
 
-    if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount)) return;
+    if ((spellTargetDoor < 0) || (spellTargetDoor >= doorCount))
+        return;
     Vector2 gatePosition = DoorCenter(&doors[spellTargetDoor]);
 
     if (spellState == SPELL_FLYING)
     {
         // Spark: bright core with cross arms in the wand's color (gold by default)
-        float sx = roundf(spellPos.x/RIVER_PIXEL)*RIVER_PIXEL;
-        float sy = roundf(spellPos.y/RIVER_PIXEL)*RIVER_PIXEL;
-        Color core = { 255, 244, 180, 255 };
-        Color gold = wandCharged? wandColor : (Color){ 217, 168, 60, 255 };
+        float sx = roundf(spellPos.x / RIVER_PIXEL) * RIVER_PIXEL;
+        float sy = roundf(spellPos.y / RIVER_PIXEL) * RIVER_PIXEL;
+        Color core = {255, 244, 180, 255};
+        Color gold = wandCharged ? wandColor : (Color){217, 168, 60, 255};
         DrawRectangle((int)(sx - RIVER_PIXEL), (int)(sy - RIVER_PIXEL),
-                      (int)(2*RIVER_PIXEL), (int)(2*RIVER_PIXEL), core);
-        DrawRectangle((int)(sx - 2*RIVER_PIXEL), (int)(sy - RIVER_PIXEL/2), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
-        DrawRectangle((int)(sx + RIVER_PIXEL), (int)(sy - RIVER_PIXEL/2), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
-        DrawRectangle((int)(sx - RIVER_PIXEL/2), (int)(sy - 2*RIVER_PIXEL), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
-        DrawRectangle((int)(sx - RIVER_PIXEL/2), (int)(sy + RIVER_PIXEL), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
+                      (int)(2 * RIVER_PIXEL), (int)(2 * RIVER_PIXEL), core);
+        DrawRectangle((int)(sx - 2 * RIVER_PIXEL), (int)(sy - RIVER_PIXEL / 2), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
+        DrawRectangle((int)(sx + RIVER_PIXEL), (int)(sy - RIVER_PIXEL / 2), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
+        DrawRectangle((int)(sx - RIVER_PIXEL / 2), (int)(sy - 2 * RIVER_PIXEL), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
+        DrawRectangle((int)(sx - RIVER_PIXEL / 2), (int)(sy + RIVER_PIXEL), (int)RIVER_PIXEL, (int)RIVER_PIXEL, gold);
     }
     else if (spellState == GATE_TRANSFORM)
     {
         // Poof: gate lingers for the first half, white flash expands and fades
-        if (spellTimer < transformTime*0.5f) DrawGate(gatePosition, GateBarColor(&doors[spellTargetDoor]));
+        if (spellTimer < transformTime * 0.5f)
+            DrawGate(gatePosition, GateBarColor(&doors[spellTargetDoor]));
 
-        float f = spellTimer/transformTime;     // 0 -> 1
-        unsigned char a = (unsigned char)(255*(1.0f - f));
-        float spread = 12.0f + f*30.0f;
-        DrawRectangle((int)(gatePosition.x - 12), (int)(gatePosition.y - 12), 24, 24, (Color){ 255, 255, 255, a });
-        DrawRectangle((int)(gatePosition.x - spread - 4), (int)(gatePosition.y - 4), 8, 8, (Color){ 255, 244, 180, a });
-        DrawRectangle((int)(gatePosition.x + spread - 4), (int)(gatePosition.y - 4), 8, 8, (Color){ 255, 244, 180, a });
-        DrawRectangle((int)(gatePosition.x - 4), (int)(gatePosition.y - spread - 4), 8, 8, (Color){ 255, 244, 180, a });
-        DrawRectangle((int)(gatePosition.x - 4), (int)(gatePosition.y + spread - 4), 8, 8, (Color){ 255, 244, 180, a });
+        float f = spellTimer / transformTime; // 0 -> 1
+        unsigned char a = (unsigned char)(255 * (1.0f - f));
+        float spread = 12.0f + f * 30.0f;
+        DrawRectangle((int)(gatePosition.x - 12), (int)(gatePosition.y - 12), 24, 24, (Color){255, 255, 255, a});
+        DrawRectangle((int)(gatePosition.x - spread - 4), (int)(gatePosition.y - 4), 8, 8, (Color){255, 244, 180, a});
+        DrawRectangle((int)(gatePosition.x + spread - 4), (int)(gatePosition.y - 4), 8, 8, (Color){255, 244, 180, a});
+        DrawRectangle((int)(gatePosition.x - 4), (int)(gatePosition.y - spread - 4), 8, 8, (Color){255, 244, 180, a});
+        DrawRectangle((int)(gatePosition.x - 4), (int)(gatePosition.y + spread - 4), 8, 8, (Color){255, 244, 180, a});
     }
 }
