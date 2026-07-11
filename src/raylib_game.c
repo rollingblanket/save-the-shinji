@@ -362,7 +362,7 @@ static const char *storyLines[] = {
     "But the floodgates rusted shut, only one",
     "witch still remembers how to brew the rivers.",
     "",
-    "Casting hex to paint the water.",
+    "Mix the right colors to...",
     "Save the Shinji.",
 };
 #define STORY_LINE_COUNT (int)(sizeof(storyLines)/sizeof(storyLines[0]))
