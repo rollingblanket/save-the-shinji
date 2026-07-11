@@ -16,7 +16,7 @@
 #define RIVER_PURPLE     { 136, 60, 184, 255 } // Blue + Red
 #define RIVER_ORANGE     { 230, 126, 34, 255 } // Red + Yellow
 #define RIVER_GREEN      { 62, 168, 82, 255 } // Yellow + Blue
-#define RIVER_VERMILION  { 0xD3, 0x5C, 0x26, 0xFF } // Red + Orange
+#define RIVER_VERMILION  { 0xE8, 0x60, 0x4C, 0xFF } // Red + Orange (coral shade, distinct from orange)
 #define RIVER_AMBER      { 0xE7, 0x99, 0x25, 0xFF } // Yellow + Orange
 #define RIVER_CHARTREUSE { 0x93, 0xAE, 0x3D, 0xFF } // Yellow + Green
 #define RIVER_TEAL       { 0x36, 0x8C, 0x91, 0xFF } // Blue + Green
@@ -29,7 +29,7 @@ static const Color riverYellow = RIVER_YELLOW;
 static const Color riverPurple = RIVER_PURPLE;          // red + blue
 static const Color riverOrange = RIVER_ORANGE;          // red + yellow
 static const Color riverGreen = RIVER_GREEN;            // blue + yellow
-static const Color riverVermilion = RIVER_VERMILION;    // red + orange (#D35C26)
+static const Color riverVermilion = RIVER_VERMILION;    // red + orange (#E8604C)
 static const Color riverAmber = RIVER_AMBER;            // yellow + orange (#E79925)
 static const Color riverChartreuse = RIVER_CHARTREUSE;  // yellow + green (#93AE3D)
 static const Color riverTeal = RIVER_TEAL;              // blue + green (#368C91)
