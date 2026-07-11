@@ -12,6 +12,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "pixel_sprite.h"
+#include "witch.h"
 
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>      // Emscripten library
@@ -212,33 +213,6 @@ static const float bayer4[4][4] = {
 };
 
 #include "river_colors.h"
-
-//----------------------------------------------------------------------------------
-// Witch sprite (3/4 view, ASCII bitmap: each char is one low-res pixel,
-// '.' = transparent, letters are palette keys mapped by SpriteColor())
-//----------------------------------------------------------------------------------
-#define WITCH_SIZE 16
-// She holds a wand in her outer hand: 'B' stick angled up-right, 'X' crystal
-// tip. The tip renders in the dipped pigment color once the wand is charged
-static const char *witchSprite[WITCH_SIZE] = {
-    "........T.......",
-    ".......TTT......",
-    ".......TTT......",
-    "......TTTTT.....",
-    "......AAAAA.....",
-    "...HHHHHHHHHH...",
-    ".....FFFFFF....X",
-    ".....FEFFEF....X",
-    ".....FFFFFF....B",
-    ".....RRRRRR...B.",
-    "....RRRRRRRR.B..",
-    "...SRRRRRRRRS...",
-    "YYBBBBBBBBBBBB..",
-    "YYY..RRRR.......",
-    ".....K..K.......",
-    "................"
-};
-static bool witchFlipX = false;     // True when facing left, so the bristles trail behind
 
 // Robot head (48x32): sits at the end of the main river, which forms its "body".
 // Wider (252 world px) than the full channel footprint (212 world px)
@@ -542,7 +516,6 @@ static bool MainDrained(void);          // True once this level's main source ha
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
 static Color WandCrystalColor(void);        // Display color for the witch's wand crystal
-static void DrawWitch(Vector2 worldPos, bool shadow);  // Draw the player sprite (or its shadow)
 static void DrawRobot(void);                            // Robot head with idle bob + antenna blink
 static void DrawRestartSpinner(float progress);         // Hold-to-restart progress ring
 static void UpdateDrawTitle(void);                      // Title screen: story + raylib logo badge
@@ -688,8 +661,7 @@ void UpdateDrawFrame(void)
 
 
     // Face the direction of horizontal travel (sprite flips, bristles trail behind)
-    if (dx < 0.0f) witchFlipX = true;
-    else if (dx > 0.0f) witchFlipX = false;
+    WitchSetFacingFromMovement(dx);
 
     // The witch can only fly above the river network (water + banks). Each axis
     // is tested separately so she slides along the channel edge instead of stopping
@@ -756,10 +728,10 @@ void UpdateDrawFrame(void)
         DrawRobot();
 
         // Player: shadow stays at the true position, the witch bobs above it
-        DrawWitch(mainPlayerPosition, true);
+        DrawWitch(mainPlayerPosition, true, RIVER_PIXEL, WandCrystalColor());
         Vector2 witchHover = mainPlayerPosition;
         witchHover.y += sinf((float)GetTime()*5.0f)*4.0f;
-        DrawWitch(witchHover, false);
+        DrawWitch(witchHover, false, RIVER_PIXEL, WandCrystalColor());
 
         // Hold-to-restart progress spinner, center screen
         if (spaceHoldTime > 0.0f) DrawRestartSpinner(spaceHoldTime/restartHoldTime);
@@ -1583,12 +1555,6 @@ static void RenderRiverPixels(float time)
             riverPixels[py*RIVER_RES + px] = out;
         }
     }
-}
-
-static void DrawWitch(Vector2 worldPos, bool shadow)
-{
-    DrawPixelSprite(witchSprite, WITCH_SIZE, WITCH_SIZE, worldPos, witchFlipX,
-                    shadow, RIVER_PIXEL, WandCrystalColor());
 }
 
 // Robot head idle animation: gentle one-pixel bob plus blinking antenna ball
