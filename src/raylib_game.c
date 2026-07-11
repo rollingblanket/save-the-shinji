@@ -759,14 +759,6 @@ void UpdateDrawFrame(void)
         Vector2 witchHover = mainPlayerPosition;
         witchHover.y += sinf((float)GetTime()*5.0f)*4.0f;
         DrawWitch(witchHover, false);
-        DrawCircleLines(
-            (int)mainPlayerPosition.x,
-            (int)mainPlayerPosition.y,
-            interactionRadius,
-            wandCharged? wandColor : LIGHTGRAY
-        );
-
-
 
         // Hold-to-restart progress spinner, center screen
         if (spaceHoldTime > 0.0f) DrawRestartSpinner(spaceHoldTime/restartHoldTime);
@@ -1846,15 +1838,20 @@ static void DrawSpellScene(void)
             // Color-locked gates are painted entirely in their lock color
             DrawGate(doorPosition, GateBarColor(&doors[i]));
 
-            // Cast-range hint: pulsing ring while the witch is close enough. Gray
-            // when the gate's lock does not match the wand
+            // Proximity hint: when the witch is near the door, outline the gate
+            // itself - white if her spell can open it, red if it's locked
+            // against her current wand. Snapped to the same low-res grid the
+            // gate sprite is drawn on
             if ((spellState == GATE_CLOSED) &&
-                (Vector2Distance(mainPlayerPosition, doorPosition) <= gateCastRadius))
+                CheckCollisionCircleRec(mainPlayerPosition, interactionRadius, doors[i].rect))
             {
-                bool wandFits = WandMatchesDoor(&doors[i]);
-                DrawCircleLines((int)doorPosition.x, (int)doorPosition.y,
-                                gateCastRadius + sinf(t*6.0f)*3.0f,
-                                wandFits? YELLOW : (Color){ 130, 130, 140, 255 });
+                Color outline = WandMatchesDoor(&doors[i])? RAYWHITE : (Color){ 230, 60, 48, 255 };
+                int left = (int)roundf(doorPosition.x/RIVER_PIXEL) - GATE_W/2;
+                int top = (int)roundf(doorPosition.y/RIVER_PIXEL) - GATE_H/2;
+                DrawRectangleLinesEx((Rectangle){
+                        (left - 1)*RIVER_PIXEL, (top - 1)*RIVER_PIXEL,
+                        (GATE_W + 2)*RIVER_PIXEL, (GATE_H + 2)*RIVER_PIXEL },
+                    RIVER_PIXEL, outline);
             }
         }
         else if (doors[i].frogged)
