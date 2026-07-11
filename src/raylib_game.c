@@ -121,6 +121,7 @@ typedef struct LevelDef {
 
     Color mainColor;        // Main river source color; alpha 0 = default blue
     float mainDrainDelay;   // Seconds until the main source dries up; 0 = never
+    bool mainDry;           // Main river starts DRY: an empty spine until a side river fills it
 } LevelDef;
 
 typedef struct JunctionRender {
@@ -939,6 +940,7 @@ static void BuildRivers(const LevelDef *level)
         junctionNodes[i] = AddRiverNode((Vector2){ mainX, junctionYs[i] }, true, false, BLANK, -1);
     }
     Color mainColor = (level->mainColor.a != 0)? level->mainColor : riverBlue;
+    if (level->mainDry) mainColor = BLANK;  // Dry spine: the source emits nothing
     int mainSource = AddRiverNode((Vector2){ mainX, (float)screenHeight }, true, true, mainColor, -1);
     mainSourceIndex = mainSource;
 
@@ -1076,7 +1078,9 @@ static void PropagateRiverColors(void)
         if (rivers[i].isSource)
         {
             rivers[i].color = rivers[i].sourceColor;
-            rivers[i].flow = 1.0f;  // Closed doors block at the junction, not at the source
+            // A colorless source is a dry channel: it pushes no water. Colored
+            // sources always flow (closed doors block at the junction instead)
+            rivers[i].flow = (rivers[i].sourceColor.a != 0)? 1.0f : 0.0f;
         }
         else if (inFlow[i] > 0.0f)
         {

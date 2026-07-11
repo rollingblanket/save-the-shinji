@@ -90,6 +90,30 @@ static const DoorDef level5Doors[] = {
     { .sideRiverIndex = 0 }     // Plain gate: the challenge is the clock, not the lock
 };
 
+// Level 7, Shinji's body. The spine starts TRANSPARENT (mainDry): the map is a
+// body, limbs are rivers, joints are doors. Left arm: blue behind a green door
+// (the spine's only clean blue). Right arm: blue through a RED pool = purple key.
+// Left leg: red through a YELLOW pool = orange key (purple lock). Right leg:
+// yellow through a BLUE pool = green (orange lock at the mouth). Brew purple ->
+// orange -> green, dip green to open the left arm (blue fills the spine), re-dip
+// orange, release the right leg's green: blue + green = cyan rises into the head
+static const SideRiverDef level6SideRivers[] = {
+    { .source = { 0, 300 }, .sourceColor = RIVER_BLUE, .junctionY = 300.0f },       // left arm
+    { .source = { 720, 240 }, .sourceColor = RIVER_BLUE, .junctionY = 240.0f },     // right arm
+    { .source = { 0, 560 }, .sourceColor = RIVER_RED, .junctionY = 560.0f },        // left leg
+    { .source = { 720, 500 }, .sourceColor = RIVER_YELLOW, .junctionY = 500.0f }    // right leg
+};
+
+static const DoorDef level6Doors[] = {
+    { .sideRiverIndex = 0, .requiresWandColor = RIVER_GREEN },                      // left arm: green door
+    { .sideRiverIndex = 1 },                                                        // right arm: inner black door
+    { .sideRiverIndex = 1, .distFromMouth = 170.0f, .fill = RIVER_RED },            // right arm: outer black door, red pool
+    { .sideRiverIndex = 2 },                                                        // left leg: black door at the mouth
+    { .sideRiverIndex = 2, .distFromMouth = 170.0f, .requiresWandColor = RIVER_PURPLE, .fill = RIVER_YELLOW }, // left leg: purple door, yellow pool
+    { .sideRiverIndex = 3, .requiresWandColor = RIVER_ORANGE },                     // right leg: orange door at the mouth
+    { .sideRiverIndex = 3, .distFromMouth = 170.0f, .fill = RIVER_BLUE }            // right leg: black door, blue pool
+};
+
 static const LevelDef levelDefs[] = {
     {
         .sideRivers = level0SideRivers,
@@ -155,6 +179,18 @@ static const LevelDef levelDefs[] = {
         .robotWantedColor = RIVER_ORANGE,
         .mainColor = RIVER_YELLOW,
         .mainDrainDelay = 3.0f
+    },
+    {
+        // Level 7: Shinji's body (cyan, transparent spine)
+        .sideRivers = level6SideRivers,
+        .sideRiverCount = 4,
+        .buttons = NULL,
+        .buttonCount = 0,
+        .doors = level6Doors,
+        .doorCount = 7,
+        .playerSpawn = { (float)screenWidth/2, 660 },
+        .robotWantedColor = RIVER_TEAL,
+        .mainDry = true
     },
 };
 
