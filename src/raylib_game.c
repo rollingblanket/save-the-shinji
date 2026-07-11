@@ -431,6 +431,17 @@ static const char *AssetPath(const char *fileName)
     return path;
 }
 
+// Copy the first `count` characters of `text` into `dst` (used for the
+// typewriter reveal).
+static const char *SubText(char *dst, int dstSize, const char *text, int count)
+{
+    if (count < 0) count = 0;
+    if (count > dstSize - 1) count = dstSize - 1;
+    for (int i = 0; i < count; i++) dst[i] = text[i];
+    dst[count] = '\0';
+    return dst;
+}
+
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
@@ -1684,7 +1695,8 @@ static void UpdateDrawTitle(void)
         if (show > 0)
         {
             int x = (screenWidth - MeasureText(storyLines[i], 20)) / 2;
-            DrawText(TextSubtext(storyLines[i], 0, show), x, y, 20, (Color){201, 209, 218, 255});
+            char lineBuf[256];
+            DrawText(SubText(lineBuf, sizeof(lineBuf), storyLines[i], show), x, y, 20, (Color){201, 209, 218, 255});
         }
         y += (len == 0) ? 14 : 28;
     }
@@ -1714,7 +1726,10 @@ static void UpdateDrawTitle(void)
             DrawRectangle(lx, ly + LOGO_SIZE - LOGO_BORDER, logoBottomW, LOGO_BORDER, RAYWHITE);
         }
         if (logoState >= 3)
-            DrawText(TextSubtext("raylib", 0, logoLetters), lx + 42, ly + 88, 25, RAYWHITE);
+        {
+            char logoBuf[16];
+            DrawText(SubText(logoBuf, sizeof(logoBuf), "raylib", logoLetters), lx + 42, ly + 88, 25, RAYWHITE);
+        }
     }
 
     EndDrawing();
@@ -1819,7 +1834,8 @@ static void UpdateDrawEnding(void)
         if (show > 0)
         {
             int x = (screenWidth - MeasureText(endingLines[i], 22)) / 2;
-            DrawText(TextSubtext(endingLines[i], 0, show), x, y, 22, (Color){201, 209, 218, 255});
+            char lineBuf[256];
+            DrawText(SubText(lineBuf, sizeof(lineBuf), endingLines[i], show), x, y, 22, (Color){201, 209, 218, 255});
         }
         y += 34;
     }
