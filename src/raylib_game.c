@@ -12,6 +12,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "pixel_sprite.h"
+#include "robot.h"
 #include "witch.h"
 
 #if defined(PLATFORM_WEB)
@@ -214,116 +215,6 @@ static const float bayer4[4][4] = {
 
 #include "river_colors.h"
 
-// Robot head (48x32): sits at the end of the main river, which forms its "body".
-// Wider (252 world px) than the full channel footprint (212 world px)
-#define ROBOT_W 48
-#define ROBOT_H 32
-static const char *robotSprite[ROBOT_H] = {
-    "..............................AAA...............",
-    "..............................AAA...............",
-    "..............................AAA...............",
-    ".............................D..................",
-    "............................D...................",
-    "...........................D....................",
-    "...........................D....................",
-    "...........................D....................",
-    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
-    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
-    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
-    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
-    ".DDDMMMMDLLLLLKKLLLLLLLLLLLLLLLLKKLLLLGDMMMMDDD.",
-    "DMMDMMMMDLLLLLLKKLLLLLLLLLLLLLLKKLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLLKKLLLLLLLLLLLLKKLLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLKKLLLLLLLLLLLLLLKKLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLKKLLLLLLLLLLLLLLLLKKLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
-    ".DDDMMMMDLLLLLLLLLLLKLLLLLLKLLLLLLLLLLGDMMMMDDD.",
-    "...DMMMMDLLLLLLLLLLLKLLKKLLKLLLLLLLLLLGDMMMMD...",
-    "...DMMMMDLLLLLLLLLLLLKKLLKKLLLLLLLLLLLGDMMMMD...",
-    "...DMMMMDGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGDMMMMD...",
-    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
-    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
-    "................................................",
-    "................................................"
-};
-// Happy variant of the robot head: same shell, but the screen shows arc eyes
-// and a smile. Drawn instead of robotSprite once robotHappy is set
-static const char *robotSpriteHappy[ROBOT_H] = {
-    "..............................AAA...............",
-    "..............................AAA...............",
-    "..............................AAA...............",
-    ".............................D..................",
-    "............................D...................",
-    "...........................D....................",
-    "...........................D....................",
-    "...........................D....................",
-    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
-    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
-    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
-    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
-    ".DDDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDDD.",
-    "DMMDMMMMDLLLLLLKKLLLLLLLLLLLLLLKKLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLKLLKLLLLLLLLLLLLKLLKLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
-    ".DDDMMMMDLLLLLLLLLLKLLLLLLLLKLLLLLLLLLGDMMMMDDD.",
-    "...DMMMMDLLLLLLLLLLLKLLLLLLKLLLLLLLLLLGDMMMMD...",
-    "...DMMMMDLLLLLLLLLLLLKKKKKKLLLLLLLLLLLGDMMMMD...",
-    "...DMMMMDGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGDMMMMD...",
-    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
-    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
-    "................................................",
-    "................................................"
-};
-// Sad variant for the title screen: drooping outer eyebrows and a frown
-static const char *robotSpriteSad[ROBOT_H] = {
-    "..............................AAA...............",
-    "..............................AAA...............",
-    "..............................AAA...............",
-    ".............................D..................",
-    "............................D...................",
-    "...........................D....................",
-    "...........................D....................",
-    "...........................D....................",
-    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
-    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
-    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
-    "...DMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMD...",
-    ".DDDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDDD.",
-    "DMMDMMMMDLLLLLLLKKLLLLLLLLLLLLKKLLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLKKLLLLLLLLLLLLLLLLKKLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
-    "DMMDMMMMDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGDMMMMDMMD",
-    ".DDDMMMMDLLLLLLLLLLLLKKKKKKLLLLLLLLLLLGDMMMMDDD.",
-    "...DMMMMDLLLLLLLLLLLKLLLLLLKLLLLLLLLLLGDMMMMD...",
-    "...DMMMMDLLLLLLLLLLKLLLLLLLLKLLLLLLLLLGDMMMMD...",
-    "...DMMMMDGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGDMMMMD...",
-    "...DMMMMDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "...DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD...",
-    "....DMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMD....",
-    ".....DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD....",
-    "................................................",
-    "................................................"
-};
-static const Vector2 robotPosition = { (float)screenWidth/2, 96 };  // Head center, over the river mouth
 
 //----------------------------------------------------------------------------------
 // Title screen: story typewriter + the classic raylib logo animation, playing
@@ -353,42 +244,6 @@ static int logoLetters = 0;
 static int logoTopW = 8, logoLeftH = 8, logoBottomW = 8, logoRightH = 8;
 #define LOGO_SIZE 128
 #define LOGO_BORDER 8
-
-// Thought bubble shown right of the robot: a snippet of river (two banks with
-// water between) in the color he wants. 'C' pixels resolve to robotWantedColor
-// at draw time, so the bubble recolors itself per level. Tail dots bottom-left
-#define BUBBLE_W 24
-#define BUBBLE_H 15
-static const char *bubbleSprite[BUBBLE_H] = {
-    "......KKKKKKKKKK........",
-    "....KKLLLLLLLLLLKK......",
-    "...KLLLLLLLLLLLLLLLK....",
-    "..KLLLLLLLLLLLLLLLLLK...",
-    ".KLLLLLLLLLLLLLLLLLLLK..",
-    ".KLLKKKKKKKKKKKKKKKLLK..",
-    ".KLLCCCCCCCCCCCCCCCLLK..",
-    ".KLLCCCCCCCCCCCCCCCLLK..",
-    ".KLLCCCCCCCCCCCCCCCLLK..",
-    ".KLLKKKKKKKKKKKKKKKLLK..",
-    ".KLLLLLLLLLLLLLLLLLLLK..",
-    "..KLLLLLLLLLLLLLLLLLK...",
-    "...KLLLLLLLLLLLLLLLK....",
-    "....KKLLLLLLLLLLKK......",
-    "......KKKKKKKKKK........"
-};
-
-// Mini bubbles trailing between the robot and the thought bubble
-static const char *miniBubbleBig[4] = {
-    ".KK.",
-    "KLLK",
-    "KLLK",
-    ".KK."
-};
-static const char *miniBubbleSmall[3] = {
-    ".K.",
-    "KLK",
-    ".K."
-};
 
 // Level goal: the robot is happy once water of the color it wants ARRIVES at the
 // river mouth (not just when the steady-state color changes on merge)
@@ -516,7 +371,6 @@ static bool MainDrained(void);          // True once this level's main source ha
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
 static Color WandCrystalColor(void);        // Display color for the witch's wand crystal
-static void DrawRobot(void);                            // Robot head with idle bob + antenna blink
 static void DrawRestartSpinner(float progress);         // Hold-to-restart progress ring
 static void UpdateDrawTitle(void);                      // Title screen: story + raylib logo badge
 
@@ -725,7 +579,8 @@ void UpdateDrawFrame(void)
         DrawSpellScene();
 
         // Robot head at the river's end (the river is its body)
-        DrawRobot();
+        DrawRobot((float)screenWidth, robotHappy, robotWantedColor,
+                  RIVER_PIXEL, RIVER_FLOW_SPEED);
 
         // Player: shadow stays at the true position, the witch bobs above it
         DrawWitch(mainPlayerPosition, true, RIVER_PIXEL, WandCrystalColor());
@@ -1557,66 +1412,6 @@ static void RenderRiverPixels(float time)
     }
 }
 
-// Robot head idle animation: gentle one-pixel bob plus blinking antenna ball
-static void DrawRobot(void)
-{
-    float t = (float)GetTime();
-    Vector2 pos = robotPosition;
-    pos.y += sinf(t*1.6f)*RIVER_PIXEL;      // Rounds to a 1 low-res pixel bob
-
-    DrawPixelSprite(robotHappy? robotSpriteHappy : robotSprite, ROBOT_W, ROBOT_H,
-                    pos, false, false, RIVER_PIXEL, robotWantedColor);
-
-    // Thought bubble on the right showing the river color he wants,
-    // floating with the same bob (slightly out of phase). Gone once happy
-    if (!robotHappy)
-    {
-        Vector2 bubblePos = { robotPosition.x + 216, robotPosition.y - 48 + sinf(t*1.6f + 1.0f)*RIVER_PIXEL };
-        DrawPixelSprite(bubbleSprite, BUBBLE_W, BUBBLE_H, bubblePos, false,
-                        false, RIVER_PIXEL, robotWantedColor);
-
-        // The snippet flows like a real river: same waterline + moving streaks
-        // treatment as RenderRiverPixels, applied to the bubble's 'C' cells
-        int left = (int)roundf(bubblePos.x/RIVER_PIXEL) - BUBBLE_W/2;
-        int top = (int)roundf(bubblePos.y/RIVER_PIXEL) - BUBBLE_H/2;
-        for (int y = 6; y <= 8; y++)
-        {
-            for (int x = 4; x <= 18; x++)
-            {
-                Color w = robotWantedColor;
-                if ((y == 6) || (y == 8)) w = WaterDark(w);     // Waterline edges
-                else
-                {
-                    // Streaks drift toward the robot, same speed as real water
-                    float sp = fmodf(x*RIVER_PIXEL + t*RIVER_FLOW_SPEED, 90.0f);
-                    if ((sp < 24.0f) && (((x*7 + y*3)%5) < 3)) w = WaterLight(w);
-                }
-                DrawRectangle((int)((left + x)*RIVER_PIXEL), (int)((top + y)*RIVER_PIXEL),
-                              (int)RIVER_PIXEL, (int)RIVER_PIXEL, w);
-            }
-        }
-
-        // Mini bubbles leading from the robot up to the thought bubble,
-        // each bobbing on its own phase
-        Vector2 miniBig = { robotPosition.x + 168, robotPosition.y - 6 + sinf(t*1.6f + 2.2f)*RIVER_PIXEL };
-        Vector2 miniSmall = { robotPosition.x + 132, robotPosition.y + 24 + sinf(t*1.6f + 3.4f)*RIVER_PIXEL };
-        DrawPixelSprite(miniBubbleBig, 4, 4, miniBig, false, false,
-                        RIVER_PIXEL, robotWantedColor);
-        DrawPixelSprite(miniBubbleSmall, 3, 3, miniSmall, false, false,
-                        RIVER_PIXEL, robotWantedColor);
-    }
-
-    // Blink: overdraw the 3x3 antenna ball (sprite cells x30..32, y0..2) brighter.
-    // Blinks faster when happy
-    if (((int)(t*(robotHappy? 6.0f : 2.0f)))%2 == 0)
-    {
-        int left = (int)roundf(pos.x/RIVER_PIXEL) - ROBOT_W/2;
-        int top = (int)roundf(pos.y/RIVER_PIXEL) - ROBOT_H/2;
-        DrawRectangle((int)((left + 30)*RIVER_PIXEL), (int)(top*RIVER_PIXEL),
-                      (int)(3*RIVER_PIXEL), (int)(3*RIVER_PIXEL), (Color){ 240, 224, 138, 255 });
-    }
-}
-
 //--------------------------------------------------------------------------------------------
 // Title screen
 //--------------------------------------------------------------------------------------------
@@ -1667,8 +1462,7 @@ static void UpdateDrawTitle(void)
 
         // Sad Shinji, bobbing gently
         Vector2 robotPos = { (float)screenWidth/2, 216 + sinf(t*1.6f)*RIVER_PIXEL };
-        DrawPixelSprite(robotSpriteSad, ROBOT_W, ROBOT_H, robotPos, false,
-                        false, RIVER_PIXEL, (Color){ 0 });
+        DrawSadRobot(robotPos, RIVER_PIXEL);
 
         // Story, revealed character by character. Each line is centered at its
         // final position so the text doesn't shift while typing

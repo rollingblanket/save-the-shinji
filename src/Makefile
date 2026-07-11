@@ -34,7 +34,7 @@ PLATFORM              ?= PLATFORM_DESKTOP
 PROJECT_NAME          ?= save-the-shinji
 PROJECT_VERSION       ?= 1.0
 PROJECT_BUILD_PATH    ?= .
-PROJECT_SOURCE_FILES  ?= raylib_game.c pixel_sprite.c witch.c
+PROJECT_SOURCE_FILES  ?= raylib_game.c pixel_sprite.c witch.c robot.c
 
 # raylib library variables
 RAYLIB_PATH           ?= $(shell brew --prefix raylib)
