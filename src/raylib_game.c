@@ -431,6 +431,26 @@ static const char *AssetPath(const char *fileName)
     return path;
 }
 
+// Bundled UI font. raylib's built-in default font renders invisibly on the
+// experimental 6.x web (Emscripten) backend, so all text is drawn through this
+// loaded TTF via DrawTextG/MeasureTextG instead of DrawText/MeasureText.
+static Font gameFont = {0};
+
+// Letter spacing scales with the font size so text stays proportional.
+static inline float FontSpacing(int fontSize) { return (float)fontSize / 20.0f; }
+
+// Drop-in replacement for raylib's DrawText() that uses the bundled font.
+static void DrawTextG(const char *text, int posX, int posY, int fontSize, Color color)
+{
+    DrawTextEx(gameFont, text, (Vector2){(float)posX, (float)posY}, (float)fontSize, FontSpacing(fontSize), color);
+}
+
+// Drop-in replacement for raylib's MeasureText() that uses the bundled font.
+static int MeasureTextG(const char *text, int fontSize)
+{
+    return (int)MeasureTextEx(gameFont, text, (float)fontSize, FontSpacing(fontSize)).x;
+}
+
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
@@ -443,6 +463,12 @@ int main(void)
     // Initialization
     //--------------------------------------------------------------------------------------
     InitWindow(screenWidth, screenHeight, "raylib gamejam template");
+
+    // Load the bundled UI font at a high base size; scaled down per draw call.
+    // TEXTURE_FILTER_BILINEAR keeps it smooth at smaller sizes. Swap the file at
+    // assets/font.ttf (e.g. a pixel font) to restyle all text.
+    gameFont = LoadFontEx(AssetPath("font.ttf"), 64, NULL, 0);
+    SetTextureFilter(gameFont.texture, TEXTURE_FILTER_BILINEAR);
 
     InitAudioDevice();
     themeMusic = LoadMusicStream(AssetPath("theme.mp3"));
@@ -487,6 +513,7 @@ int main(void)
     //--------------------------------------------------------------------------------------
     UnloadTexture(riverTexture);
     UnloadRenderTexture(target);
+    UnloadFont(gameFont);
 
     UnloadMusicStream(themeMusic);
     UnloadMusicStream(backgroundMusic);
@@ -624,27 +651,27 @@ void UpdateDrawFrame(void)
                    (Vector2){0, 0}, 0.0f, WHITE);
 
     // Level number, top-left corner
-    DrawText(TextFormat("Level %d", currentLevelIndex + 1), 20, 20, 20, RAYWHITE);
+    DrawTextG(TextFormat("Level %d", currentLevelIndex + 1), 20, 20, 20, RAYWHITE);
 
     if (robotHappy)
-        DrawText("Level complete! Press SPACE to continue", 20, 690, 20, YELLOW);
+        DrawTextG("Level complete! Press SPACE to continue", 20, 690, 20, YELLOW);
     else
     {
         if (currentLevelIndex >= 2)
         {
-            DrawText("Press F to dip your wand with the river color", 20, 660, 20, RAYWHITE);
+            DrawTextG("Press F to dip your wand with the river color", 20, 660, 20, RAYWHITE);
         }
         if (currentLevelIndex < 2)
         {
-            DrawText("Press R to hex a gate", 20, 660, 20, RAYWHITE);
+            DrawTextG("Press R to hex a gate", 20, 660, 20, RAYWHITE);
         }
-        DrawText("Press and hold SPACE to restart", 20, 690, 20, RAYWHITE);
+        DrawTextG("Press and hold SPACE to restart", 20, 690, 20, RAYWHITE);
     }
 
     // Drain warning: flashes for a few seconds once the main source dries
     if (MainDrained() && !robotHappy && (levelTime < mainDrainAt + 4.0f) && (((int)(levelTime * 3.0f)) % 2 == 0))
     {
-        DrawText("The river is drying up!", 220, 340, 26, (Color){240, 90, 70, 255});
+        DrawTextG("The river is drying up!", 220, 340, 26, (Color){240, 90, 70, 255});
     }
 
     // Gate / spell spark / poof / frog, depending on the spell state
@@ -1666,7 +1693,7 @@ static void UpdateDrawTitle(void)
 
     // Title
     const char *title = "SAVE THE SHINJI";
-    DrawText(title, (screenWidth - MeasureText(title, 44)) / 2, 64, 44, RAYWHITE);
+    DrawTextG(title, (screenWidth - MeasureTextG(title, 44)) / 2, 64, 44, RAYWHITE);
 
     // Sad Shinji, bobbing gently
     Vector2 robotPos = {(float)screenWidth / 2, 216 + sinf(t * 1.6f) * RIVER_PIXEL};
@@ -1683,8 +1710,8 @@ static void UpdateDrawTitle(void)
         budget -= show;
         if (show > 0)
         {
-            int x = (screenWidth - MeasureText(storyLines[i], 20)) / 2;
-            DrawText(TextSubtext(storyLines[i], 0, show), x, y, 20, (Color){201, 209, 218, 255});
+            int x = (screenWidth - MeasureTextG(storyLines[i], 20)) / 2;
+            DrawTextG(TextSubtext(storyLines[i], 0, show), x, y, 20, (Color){201, 209, 218, 255});
         }
         y += (len == 0) ? 14 : 28;
     }
@@ -1693,7 +1720,7 @@ static void UpdateDrawTitle(void)
     if (storyDone && (((int)(t * 2.0f)) % 2 == 0))
     {
         const char *prompt = "- Press ENTER -";
-        DrawText(prompt, (screenWidth - MeasureText(prompt, 24)) / 2, 620, 24, YELLOW);
+        DrawTextG(prompt, (screenWidth - MeasureTextG(prompt, 24)) / 2, 620, 24, YELLOW);
     }
 
     // raylib logo badge, bottom-right
@@ -1714,7 +1741,7 @@ static void UpdateDrawTitle(void)
             DrawRectangle(lx, ly + LOGO_SIZE - LOGO_BORDER, logoBottomW, LOGO_BORDER, RAYWHITE);
         }
         if (logoState >= 3)
-            DrawText(TextSubtext("raylib", 0, logoLetters), lx + 42, ly + 88, 25, RAYWHITE);
+            DrawTextG(TextSubtext("raylib", 0, logoLetters), lx + 42, ly + 88, 25, RAYWHITE);
     }
 
     EndDrawing();
@@ -1779,7 +1806,7 @@ static void UpdateDrawEnding(void)
     // Title below the head, cycling through the earned palette
     const char *title = "CONGRATULATIONS!";
     Color titleColor = endingPalette[((int)(t * 1.5f)) % ENDING_PALETTE_COUNT];
-    DrawText(title, (screenWidth - MeasureText(title, 44)) / 2, 64, 44, titleColor);
+    DrawTextG(title, (screenWidth - MeasureTextG(title, 44)) / 2, 64, 44, titleColor);
 
     // Happy Shinji, bobbing, antenna ball blinking fast
     Vector2 robotPos = {(float)screenWidth / 2, 216 + sinf(t * 1.6f) * RIVER_PIXEL};
@@ -1818,8 +1845,8 @@ static void UpdateDrawEnding(void)
         budget -= show;
         if (show > 0)
         {
-            int x = (screenWidth - MeasureText(endingLines[i], 22)) / 2;
-            DrawText(TextSubtext(endingLines[i], 0, show), x, y, 22, (Color){201, 209, 218, 255});
+            int x = (screenWidth - MeasureTextG(endingLines[i], 22)) / 2;
+            DrawTextG(TextSubtext(endingLines[i], 0, show), x, y, 22, (Color){201, 209, 218, 255});
         }
         y += 34;
     }
@@ -1827,7 +1854,7 @@ static void UpdateDrawEnding(void)
     if (textDone && (((int)(t * 2.0f)) % 2 == 0))
     {
         const char *prompt = "- Press ENTER -";
-        DrawText(prompt, (screenWidth - MeasureText(prompt, 24)) / 2, 640, 24, YELLOW);
+        DrawTextG(prompt, (screenWidth - MeasureTextG(prompt, 24)) / 2, 640, 24, YELLOW);
     }
 
     // Confetti on top of everything, snapped to the pixel grid
