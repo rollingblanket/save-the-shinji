@@ -11,6 +11,7 @@
 
 #include "raylib.h"
 #include "raymath.h"
+#include "pixel_sprite.h"
 
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>      // Emscripten library
@@ -540,8 +541,7 @@ static bool WandMatchesDoor(const Door *door);  // Does the wand pigment satisfy
 static bool MainDrained(void);          // True once this level's main source has dried up
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
-// Draw an ASCII sprite snapped to the low-res pixel grid (shadow = flat dark silhouette)
-static void DrawSprite(const char **rows, int w, int h, Vector2 worldPos, bool flipX, bool shadow);
+static Color WandCrystalColor(void);        // Display color for the witch's wand crystal
 static void DrawWitch(Vector2 worldPos, bool shadow);  // Draw the player sprite (or its shadow)
 static void DrawRobot(void);                            // Robot head with idle bob + antenna blink
 static void DrawRestartSpinner(float progress);         // Hold-to-restart progress ring
@@ -1390,6 +1390,14 @@ static Color WaterLight(Color c)
     return (Color){ c.r + (255 - c.r)*35/100, c.g + (255 - c.g)*35/100, c.b + (255 - c.b)*35/100, 255 };
 }
 
+static Color WandCrystalColor(void)
+{
+    Color inactive = { 208, 214, 224, 255 };
+    if (wandFlashTimer > 0.0f) return WaterLight(WaterLight(wandCharged? wandColor : inactive));
+    if (wandCharged) return WaterLight(wandColor);
+    return inactive;
+}
+
 
 /* Return c darkened to 72% brightness, with full opacity. */
 static Color WaterDark(Color c)
@@ -1577,67 +1585,10 @@ static void RenderRiverPixels(float time)
     }
 }
 
-//--------------------------------------------------------------------------------------------
-// Player sprite
-//--------------------------------------------------------------------------------------------
-// Shared palette for all ASCII sprites (witch, robot, ...)
-static Color SpriteColor(char c)
-{
-    switch (c)
-    {
-        case 'T': return (Color){ 106, 64, 156, 255 };  // Hat cone
-        case 'A': return (Color){ 217, 168, 60, 255 };  // Gold (hat band, antenna ball)
-        case 'H': return (Color){ 58, 32, 92, 255 };    // Brim
-        case 'E': return (Color){ 36, 26, 48, 255 };    // Eyes
-        case 'R': return (Color){ 84, 48, 128, 255 };   // Robe
-        case 'B': return (Color){ 138, 90, 43, 255 };   // Broom stick
-        case 'Y': return (Color){ 201, 151, 77, 255 };  // Bristles
-        case 'X':   // Wand crystal tip: shows the dipped pigment when charged.
-                    // Drawn one shade LIGHTER than the river water so it stays
-                    // visible while flying over water of the same color
-            if (wandFlashTimer > 0.0f) return WaterLight(WaterLight(wandCharged? wandColor : (Color){ 208, 214, 224, 255 }));
-            if (wandCharged) return WaterLight(wandColor);
-            return (Color){ 208, 214, 224, 255 };       // Inert pale crystal
-        case 'K': return (Color){ 42, 32, 48, 255 };    // Near-black (boots, robot face)
-        case 'D': return (Color){ 57, 64, 74, 255 };    // Dark metal outline
-        case 'M': return (Color){ 152, 161, 173, 255 }; // Metal
-        case 'L': return (Color){ 201, 209, 218, 255 }; // Screen light
-        case 'G': return (Color){ 168, 178, 192, 255 }; // Screen shade
-        case 'P': return (Color){ 95, 180, 86, 255 };   // Frog green
-        case 'Q': return (Color){ 178, 222, 146, 255 }; // Frog belly
-        case 'C': return robotWantedColor;              // Thought-bubble river water
-        default: return (Color){ 232, 184, 138, 255 };  // 'F'/'S' skin
-    }
-}
-
-// Draw an ASCII sprite (or its drop shadow) snapped to the low-res pixel grid.
-// Each sprite pixel is drawn as one RIVER_PIXEL-sized rectangle on top of the
-// scene texture, so it stays on the same grid as the pixel-art scene
-static void DrawSprite(const char **rows, int w, int h, Vector2 worldPos, bool flipX, bool shadow)
-{
-    // Round (don't truncate) so sprites center correctly on half-pixel positions
-    int left = (int)roundf(worldPos.x/RIVER_PIXEL) - w/2 + (shadow? 2 : 0);
-    int top = (int)roundf(worldPos.y/RIVER_PIXEL) - h/2 + (shadow? 3 : 0);
-
-    for (int y = 0; y < h; y++)
-    {
-        for (int x = 0; x < w; x++)
-        {
-            char c = rows[y][flipX? (w - 1 - x) : x];
-            if (c == '.') continue;
-
-            int bx = left + x;
-            int by = top + y;
-            Color col = shadow? (Color){ 10, 10, 20, 115 } : SpriteColor(c);
-            DrawRectangle((int)(bx*RIVER_PIXEL), (int)(by*RIVER_PIXEL),
-                          (int)RIVER_PIXEL, (int)RIVER_PIXEL, col);
-        }
-    }
-}
-
 static void DrawWitch(Vector2 worldPos, bool shadow)
 {
-    DrawSprite(witchSprite, WITCH_SIZE, WITCH_SIZE, worldPos, witchFlipX, shadow);
+    DrawPixelSprite(witchSprite, WITCH_SIZE, WITCH_SIZE, worldPos, witchFlipX,
+                    shadow, RIVER_PIXEL, WandCrystalColor());
 }
 
 // Robot head idle animation: gentle one-pixel bob plus blinking antenna ball
@@ -1647,14 +1598,16 @@ static void DrawRobot(void)
     Vector2 pos = robotPosition;
     pos.y += sinf(t*1.6f)*RIVER_PIXEL;      // Rounds to a 1 low-res pixel bob
 
-    DrawSprite(robotHappy? robotSpriteHappy : robotSprite, ROBOT_W, ROBOT_H, pos, false, false);
+    DrawPixelSprite(robotHappy? robotSpriteHappy : robotSprite, ROBOT_W, ROBOT_H,
+                    pos, false, false, RIVER_PIXEL, robotWantedColor);
 
     // Thought bubble on the right showing the river color he wants,
     // floating with the same bob (slightly out of phase). Gone once happy
     if (!robotHappy)
     {
         Vector2 bubblePos = { robotPosition.x + 216, robotPosition.y - 48 + sinf(t*1.6f + 1.0f)*RIVER_PIXEL };
-        DrawSprite(bubbleSprite, BUBBLE_W, BUBBLE_H, bubblePos, false, false);
+        DrawPixelSprite(bubbleSprite, BUBBLE_W, BUBBLE_H, bubblePos, false,
+                        false, RIVER_PIXEL, robotWantedColor);
 
         // The snippet flows like a real river: same waterline + moving streaks
         // treatment as RenderRiverPixels, applied to the bubble's 'C' cells
@@ -1681,8 +1634,10 @@ static void DrawRobot(void)
         // each bobbing on its own phase
         Vector2 miniBig = { robotPosition.x + 168, robotPosition.y - 6 + sinf(t*1.6f + 2.2f)*RIVER_PIXEL };
         Vector2 miniSmall = { robotPosition.x + 132, robotPosition.y + 24 + sinf(t*1.6f + 3.4f)*RIVER_PIXEL };
-        DrawSprite(miniBubbleBig, 4, 4, miniBig, false, false);
-        DrawSprite(miniBubbleSmall, 3, 3, miniSmall, false, false);
+        DrawPixelSprite(miniBubbleBig, 4, 4, miniBig, false, false,
+                        RIVER_PIXEL, robotWantedColor);
+        DrawPixelSprite(miniBubbleSmall, 3, 3, miniSmall, false, false,
+                        RIVER_PIXEL, robotWantedColor);
     }
 
     // Blink: overdraw the 3x3 antenna ball (sprite cells x30..32, y0..2) brighter.
@@ -1746,7 +1701,8 @@ static void UpdateDrawTitle(void)
 
         // Sad Shinji, bobbing gently
         Vector2 robotPos = { (float)screenWidth/2, 216 + sinf(t*1.6f)*RIVER_PIXEL };
-        DrawSprite(robotSpriteSad, ROBOT_W, ROBOT_H, robotPos, false, false);
+        DrawPixelSprite(robotSpriteSad, ROBOT_W, ROBOT_H, robotPos, false,
+                        false, RIVER_PIXEL, (Color){ 0 });
 
         // Story, revealed character by character. Each line is centered at its
         // final position so the text doesn't shift while typing
@@ -1811,7 +1767,7 @@ static void DrawGate(Vector2 worldPos, Color barColor)
         {
             char c = gateSprite[y][x];
             if (c == '.') continue;
-            Color col = (c == 'M')? barColor : SpriteColor(c);
+            Color col = (c == 'M')? barColor : PixelSpriteColor(c, (Color){ 0 });
             DrawRectangle((int)((left + x)*RIVER_PIXEL), (int)((top + y)*RIVER_PIXEL),
                           (int)RIVER_PIXEL, (int)RIVER_PIXEL, col);
         }
@@ -1821,7 +1777,7 @@ static void DrawGate(Vector2 worldPos, Color barColor)
 // Color a gate's bars should show: its lock color, or plain metal when unlocked
 static Color GateBarColor(const Door *door)
 {
-    return (door->requiresWandColor.a != 0)? door->requiresWandColor : SpriteColor('M');
+    return (door->requiresWandColor.a != 0)? door->requiresWandColor : PixelSpriteColor('M', (Color){ 0 });
 }
 
 // Gates / spark / poof / frogs, drawn on the same low-res pixel grid as the scene
@@ -1861,7 +1817,8 @@ static void DrawSpellScene(void)
         else if (doors[i].frogged)
         {
             const char **frame = (((int)(t*2.0f))%2 == 0)? frogSprite1 : frogSprite2;
-            DrawSprite(frame, FROG_W, FROG_H, doorPosition, false, false);
+            DrawPixelSprite(frame, FROG_W, FROG_H, doorPosition, false, false,
+                            RIVER_PIXEL, (Color){ 0 });
         }
     }
 
