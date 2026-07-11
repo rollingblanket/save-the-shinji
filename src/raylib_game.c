@@ -12,6 +12,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "pixel_sprite.h"
+#include "restart_spinner.h"
 #include "robot.h"
 #include "witch.h"
 
@@ -371,7 +372,6 @@ static bool MainDrained(void);          // True once this level's main source ha
 static void RenderRiverPixels(float time);  // Fill the low-res scene buffer
 static float RiverDistance(Vector2 p);      // Distance from a point to the river centerline network
 static Color WandCrystalColor(void);        // Display color for the witch's wand crystal
-static void DrawRestartSpinner(float progress);         // Hold-to-restart progress ring
 static void UpdateDrawTitle(void);                      // Title screen: story + raylib logo badge
 
 //----------------------------------------------------------------------------------
@@ -589,7 +589,8 @@ void UpdateDrawFrame(void)
         DrawWitch(witchHover, false, RIVER_PIXEL, WandCrystalColor());
 
         // Hold-to-restart progress spinner, center screen
-        if (spaceHoldTime > 0.0f) DrawRestartSpinner(spaceHoldTime/restartHoldTime);
+        if (spaceHoldTime > 0.0f)
+            DrawRestartSpinner(spaceHoldTime/restartHoldTime, RIVER_RES, RIVER_PIXEL);
         // TODO: Draw everything that requires to be drawn at this point, maybe UI?
 
     EndDrawing();
@@ -1511,8 +1512,6 @@ static void UpdateDrawTitle(void)
 
     EndDrawing();
 }
-
-#include "restart_spinner.inc"
 
 // Draw a gate with its bars in the given color: metal for plain gates, the lock
 // color for color-locked ones (the whole door shows what wand it wants)

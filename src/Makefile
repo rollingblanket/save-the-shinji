@@ -34,7 +34,7 @@ PLATFORM              ?= PLATFORM_DESKTOP
 PROJECT_NAME          ?= save-the-shinji
 PROJECT_VERSION       ?= 1.0
 PROJECT_BUILD_PATH    ?= .
-PROJECT_SOURCE_FILES  ?= raylib_game.c pixel_sprite.c witch.c robot.c
+PROJECT_SOURCE_FILES  ?= raylib_game.c pixel_sprite.c witch.c robot.c restart_spinner.c
 
 # raylib library variables
 RAYLIB_PATH           ?= $(shell brew --prefix raylib)
@@ -357,7 +357,7 @@ $(PROJECT_NAME): $(OBJS)
 	$(CC) -c $< -o $@ $(CFLAGS) $(INCLUDE_PATHS) -D$(PLATFORM)
 
 # Files textually included by raylib_game.c: editing them must trigger a rebuild
-raylib_game.o: levels.inc river_colors.h restart_spinner.inc
+raylib_game.o: levels.inc river_colors.h
 
 # Clean everything
 clean:
